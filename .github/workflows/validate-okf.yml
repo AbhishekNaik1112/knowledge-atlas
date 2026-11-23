@@ -1,0 +1,33 @@
+name: Validate OKF Docs
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+  push:
+    branches: [main]
+    paths:
+      - "demo/web-dev-atlas/**/*.md"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install python-frontmatter markdown-it-py pydantic pyyaml
+      - name: Validate OKF bundle
+        run: |
+          python -c "
+          import sys
+          from app.bundle import read_dir
+          from app.rules import validate_bundle
+          _, entries = read_dir('demo/web-dev-atlas')
+          res = validate_bundle([(e.rel_path, e.text) for e in entries])
+          errors = [i for i in res.issues if i.severity == 'error']
+          for i in res.issues:
+              print(f'[{i.severity}] {i.path}: {i.message}')
+          sys.exit(1 if errors else 0)
+          "
