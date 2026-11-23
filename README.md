@@ -7,7 +7,7 @@ with YAML frontmatter — into PostgreSQL and exposes them through a REST API an
 tag/type filtering, full-text and semantic search, a validator, a GitHub auto-sync webhook, and an
 interactive cross-link graph.
 
-Built **test-first (TDD)** on an entirely **free / open-source stack**. 137 tests (+2 opt-in real-model), no paid services.
+Built **test-first (TDD)** on an entirely **free / open-source stack**. 145 tests (+2 opt-in real-model), no paid services.
 
 > OKF is Google's open, vendor-neutral format for knowledge-as-files. Each concept is one Markdown file
 > with a small YAML header (`type` is the only required field); concepts cross-link with normal Markdown
@@ -25,9 +25,11 @@ Built **test-first (TDD)** on an entirely **free / open-source stack**. 137 test
   `sentence-transformers` embeddings + `pgvector` cosine) and a **hybrid** mode (reciprocal-rank fusion).
 - **Link graph** — outgoing links, backlinks, and a whole-catalog `/graph` JSON.
 - **Validator** — lint a bundle for missing `type`, duplicate IDs, and dangling links (no persistence).
-- **GitHub webhook** — HMAC-SHA256-verified push → background re-ingest.
-- **API-key auth** on write endpoints (opt-in).
-- **Web UI** — browse, live search, rendered Markdown, and a Cytoscape link graph.
+- **GitHub webhook & team sync** — HMAC-SHA256-verified push → background re-ingest with **prune-on-sync** (removes deleted/renamed `.md` files), branch & `GITHUB_SYNC_SUBDIR` scoping, `sync_events` activity log, and optional multi-repo namespace isolation (`@repo/path` cross-links).
+- **API-key auth** on write & `/validate` endpoints (opt-in).
+- **Web UI** — card catalog with live hybrid/keyword search, `Recently Updated` sort, `Repo`/`Folder`/`Type`/`Tag` filters, sync activity feed (`/ui/activity`), rendered Markdown, and a Cytoscape link graph (`/ui/graph`).
+
+See [CONTRIBUTING_DOCS.md](CONTRIBUTING_DOCS.md) for where to add `.md` files and the required OKF frontmatter format.
 
 ## Architecture
 
@@ -95,6 +97,12 @@ All optional; sensible local defaults. Copy `.env.example` to `.env` to override
 | `DATABASE_URL` | `postgresql+psycopg://okf:okf@localhost:5433/okf` | Postgres connection |
 | `API_KEY` | *(unset → auth off)* | When set, writes require `X-API-Key` |
 | `GITHUB_WEBHOOK_SECRET` | *(unset → webhook 503)* | HMAC secret for `/webhooks/github` |
+| `GITHUB_SYNC_SUBDIR` | *(unset → repo root)* | Subfolder to ingest on webhook sync (e.g. `demo/web-dev-atlas`) |
+| `GITHUB_SYNC_BRANCH` | *(repo default branch)* | Branch to sync on webhook push |
+| `GITHUB_TOKEN` | *(unset)* | Optional PAT for cloning private repos |
+| `GITHUB_REPO_URL` | *(unset)* | Enables `Edit on GitHub ↗` links on concept pages |
+| `NAMESPACE_BY_BUNDLE` | `false` | Prefix concept IDs with `{bundle}/` for multi-repo isolation |
+| `GITHUB_REPOS_CONFIG` | `{}` | JSON map of per-repo `subdir`/`branch`/`namespace` overrides |
 | `EMBEDDINGS_ENABLED` | `false` | Compute embeddings on ingest + CRUD + webhook, and enable semantic/hybrid search |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model (384-dim) |
 | `AUTO_INIT_DB` | `false` | Run `init_db()` automatically on app startup |
@@ -106,15 +114,16 @@ All optional; sensible local defaults. Copy `.env.example` to `.env` to override
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `POST` | `/ingest?path=<dir>` or multipart `file=<zip>` | Parse bundle → upsert concepts + edges. Idempotent. *(write: API key)* |
-| `GET` | `/concepts?type=&tags=&limit=&offset=` | List/filter; repeat `tags` for AND |
+| `POST` | `/ingest?path=<dir>` or multipart `file=<zip>` | Parse bundle → upsert concepts + edges (optional `prune`, `namespace_ids`). *(write: API key)* |
+| `GET` | `/concepts?type=&tags=&bundle=&limit=&offset=` | List/filter; repeat `tags` for AND (case-insensitive) |
 | `POST` | `/concepts` | Create *(write: API key)* |
 | `GET` | `/concepts/{id}?render=true` | Fetch; `render=true` adds HTML |
 | `PUT` / `DELETE` | `/concepts/{id}` | Update / delete *(write: API key)* |
 | `GET` | `/concepts/{id}/links` | Outgoing links + backlinks |
-| `GET` | `/search?q=&mode=&type=&tags=` | `mode=keyword` (default) / `semantic` / `hybrid` |
+| `GET` | `/search?q=&mode=&type=&tags=&bundle=` | `mode=keyword` (default) / `semantic` / `hybrid` |
 | `POST` | `/validate?path=` or zip | Lint a bundle; returns issues, **does not persist** *(API key when set)* |
-| `POST` | `/webhooks/github` | Verify `X-Hub-Signature-256`, background re-ingest |
+| `POST` | `/webhooks/github` | Verify `X-Hub-Signature-256`, background re-ingest + prune |
+| `GET` | `/syncs` | Recent GitHub webhook sync events |
 | `GET` | `/graph` | `{nodes, edges}` for the whole catalog |
 | `GET` | `/health` | Liveness |
 
@@ -125,8 +134,9 @@ uses a path converter — slashes work.
 
 Server-rendered (Jinja + htmx), under `/ui`:
 
-- `/ui` — browse all concepts with a live (debounced) search box (uses **hybrid** search when `EMBEDDINGS_ENABLED=true`, else **keyword**)
-- `/ui/concepts/{id}` — rendered Markdown, metadata, tags, outgoing links + backlinks
+- `/ui` — browse all concepts with live search (uses **hybrid** when `EMBEDDINGS_ENABLED=true`, else **keyword**), `Recently Updated` / `A–Z` sort, `Repo`/`Folder`/`Type`/`Tag` filters, and **Last GitHub sync** banner
+- `/ui/activity` — recent GitHub webhook sync history (`+created / ~updated / -deleted`, status)
+- `/ui/concepts/{id}` — rendered Markdown, metadata, tags, outgoing links + backlinks, and optional `Edit on GitHub ↗` link
 - `/ui/graph` — interactive Cytoscape.js graph of the cross-links (type-colored nodes, hover highlight, fit/re-layout)
 
 ## Search modes
@@ -142,7 +152,7 @@ Server-rendered (Jinja + htmx), under `/ui`:
 
 ```bash
 docker compose up -d                      # tests use the okf_test database
-.venv/Scripts/python -m pytest            # 137 tests (+2 opt-in real-model)
+.venv/Scripts/python -m pytest            # 145 tests (+2 opt-in real-model)
 ```
 
 Each test runs inside a transaction that rolls back (fast, isolated) against real Postgres. The ingest
