@@ -7,7 +7,7 @@ with YAML frontmatter — into PostgreSQL and exposes them through a REST API an
 tag/type filtering, full-text and semantic search, a validator, a GitHub auto-sync webhook, and an
 interactive cross-link graph.
 
-Built **test-first (TDD)** on an entirely **free / open-source stack**. 116 tests, no paid services.
+Built **test-first (TDD)** on an entirely **free / open-source stack**. 137 tests (+2 opt-in real-model), no paid services.
 
 > OKF is Google's open, vendor-neutral format for knowledge-as-files. Each concept is one Markdown file
 > with a small YAML header (`type` is the only required field); concepts cross-link with normal Markdown
@@ -78,8 +78,8 @@ python -m venv .venv
 Then load some data and open the UI:
 
 ```bash
-# ingest the bundled sample (real trimmed Bitcoin OKF bundle)
-curl -X POST "http://127.0.0.1:8000/ingest?path=tests/fixtures/bundles/crypto_bitcoin"
+# ingest the bundled Web Dev sample (56 cross-linked concepts)
+curl -X POST "http://127.0.0.1:8000/ingest?path=demo/web-dev-atlas"
 ```
 
 - Web UI:   http://127.0.0.1:8000/ui
@@ -95,8 +95,10 @@ All optional; sensible local defaults. Copy `.env.example` to `.env` to override
 | `DATABASE_URL` | `postgresql+psycopg://okf:okf@localhost:5433/okf` | Postgres connection |
 | `API_KEY` | *(unset → auth off)* | When set, writes require `X-API-Key` |
 | `GITHUB_WEBHOOK_SECRET` | *(unset → webhook 503)* | HMAC secret for `/webhooks/github` |
-| `EMBEDDINGS_ENABLED` | `false` | Compute embeddings on ingest + enable semantic/hybrid search |
+| `EMBEDDINGS_ENABLED` | `false` | Compute embeddings on ingest + CRUD + webhook, and enable semantic/hybrid search |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model (384-dim) |
+| `AUTO_INIT_DB` | `false` | Run `init_db()` automatically on app startup |
+| `DEFAULT_PAGE_SIZE` / `MAX_PAGE_SIZE` | `50` / `200` | Default and max `limit` for `/concepts` and `/search` |
 
 ---
 
@@ -111,7 +113,7 @@ All optional; sensible local defaults. Copy `.env.example` to `.env` to override
 | `PUT` / `DELETE` | `/concepts/{id}` | Update / delete *(write: API key)* |
 | `GET` | `/concepts/{id}/links` | Outgoing links + backlinks |
 | `GET` | `/search?q=&mode=&type=&tags=` | `mode=keyword` (default) / `semantic` / `hybrid` |
-| `POST` | `/validate?path=` or zip | Lint a bundle; returns issues, **does not persist** |
+| `POST` | `/validate?path=` or zip | Lint a bundle; returns issues, **does not persist** *(API key when set)* |
 | `POST` | `/webhooks/github` | Verify `X-Hub-Signature-256`, background re-ingest |
 | `GET` | `/graph` | `{nodes, edges}` for the whole catalog |
 | `GET` | `/health` | Liveness |
@@ -123,9 +125,9 @@ uses a path converter — slashes work.
 
 Server-rendered (Jinja + htmx), under `/ui`:
 
-- `/ui` — browse all concepts with a live (debounced) search box
+- `/ui` — browse all concepts with a live (debounced) search box (uses **hybrid** search when `EMBEDDINGS_ENABLED=true`, else **keyword**)
 - `/ui/concepts/{id}` — rendered Markdown, metadata, tags, outgoing links + backlinks
-- `/ui/graph` — interactive Cytoscape.js graph of the cross-links
+- `/ui/graph` — interactive Cytoscape.js graph of the cross-links (type-colored nodes, hover highlight, fit/re-layout)
 
 ## Search modes
 
@@ -140,7 +142,7 @@ Server-rendered (Jinja + htmx), under `/ui`:
 
 ```bash
 docker compose up -d                      # tests use the okf_test database
-.venv/Scripts/python -m pytest            # 116 tests
+.venv/Scripts/python -m pytest            # 137 tests (+2 opt-in real-model)
 ```
 
 Each test runs inside a transaction that rolls back (fast, isolated) against real Postgres. The ingest
@@ -167,6 +169,6 @@ OKF_REAL_EMBED=1 .venv/Scripts/python -m pytest tests/unit/test_embeddings_real.
 ## Roadmap
 
 Phase A core MVP ✅ · B validator ✅ · C auth + webhook ✅ · D semantic/hybrid search ✅ · E web UI + graph ✅
-· **F deploy (Render + Neon) — not yet done.**
+· **F deploy (Render + Neon) ✅** (`render.yaml` Blueprint + `Dockerfile` + Neon Postgres).
 
 License of the referenced OKF spec/samples: Apache-2.0.
