@@ -7,11 +7,12 @@ from __future__ import annotations
 import builtins
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from app.db import Concept, Edge
+from app.db import Concept, Edge, SyncEvent
 from app.errors import ConflictError, NotFoundError
 from app.parser import ParsedConcept
 
@@ -90,19 +91,52 @@ class SqlConceptRepository:
         self.s.delete(obj)
         self.s.flush()
 
+    def delete_missing_in_bundle(self, bundle: str, keep_ids: set[str]) -> builtins.list[str]:
+        """Delete concepts in `bundle` absent from `keep_ids`. Returns deleted concept IDs."""
+        stmt = select(Concept.id).where(Concept.bundle == bundle)
+        if keep_ids:
+            stmt = stmt.where(Concept.id.notin_(keep_ids))
+        missing_ids = builtins.list(self.s.execute(stmt).scalars())
+        if missing_ids:
+            self.s.execute(delete(Concept).where(Concept.id.in_(missing_ids)))
+            self.s.flush()
+        return missing_ids
+
+    def distinct_facets(
+        self,
+    ) -> tuple[builtins.list[str], builtins.list[str], builtins.list[str]]:
+        """Return sorted distinct (types, tags, top-level folders) across all concepts."""
+        rows = self.s.execute(select(Concept.id, Concept.type, Concept.tags)).all()
+        types: set[str] = set()
+        tags: set[str] = set()
+        folders: set[str] = set()
+        for cid, ctype, ctags in rows:
+            if ctype:
+                types.add(ctype)
+            if ctags:
+                tags.update(ctags)
+            if "/" in cid:
+                folders.add(cid.split("/", 1)[0])
+        return sorted(types), sorted(tags), sorted(folders)
+
     def list(
         self,
         *,
         type: str | None = None,
-        tags: list[str] | None = None,
+        tags: builtins.list[str] | None = None,
+        prefix: str | None = None,
+        sort: Literal["id", "updated"] = "id",
         limit: int = 50,
         offset: int = 0,
-    ) -> tuple[list[Concept], int]:
+    ) -> tuple[builtins.list[Concept], int]:
         conditions = []
         if type:
             conditions.append(Concept.type == type)
         if tags:
             conditions.append(Concept.tags.contains(tags))  # array @> => AND semantics
+        if prefix:
+            clean = prefix.strip("/")
+            conditions.append(Concept.id.startswith(f"{clean}/"))
 
         count_stmt = select(func.count()).select_from(Concept)
         list_stmt = select(Concept)
@@ -111,8 +145,13 @@ class SqlConceptRepository:
             list_stmt = list_stmt.where(*conditions)
 
         total = self.s.execute(count_stmt).scalar_one()
-        list_stmt = list_stmt.order_by(Concept.id).limit(limit).offset(offset)
-        items = list(self.s.execute(list_stmt).scalars())
+        order = (
+            (Concept.updated_at.desc(), Concept.id)
+            if sort == "updated"
+            else (Concept.id,)
+        )
+        list_stmt = list_stmt.order_by(*order).limit(limit).offset(offset)
+        items = builtins.list(self.s.execute(list_stmt).scalars())
         return items, total
 
     def set_embedding(self, concept_id: str, vector: builtins.list[float]) -> None:
@@ -212,12 +251,16 @@ class SqlSearchRepository:
         self.s = session
 
     @staticmethod
-    def _extra_filters(type: str | None, tags: list[str] | None) -> list:
+    def _extra_filters(
+        type: str | None, tags: list[str] | None, prefix: str | None = None
+    ) -> list:
         conditions = []
         if type:
             conditions.append(Concept.type == type)
         if tags:
             conditions.append(Concept.tags.contains(tags))
+        if prefix:
+            conditions.append(Concept.id.startswith(f"{prefix.strip('/')}/"))
         return conditions
 
     def search(
@@ -226,6 +269,7 @@ class SqlSearchRepository:
         *,
         type: str | None = None,
         tags: list[str] | None = None,
+        prefix: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SearchHit], int]:
@@ -233,7 +277,10 @@ class SqlSearchRepository:
         score = func.ts_rank_cd(Concept.search_vector, tsquery)
         snippet = func.ts_headline("english", Concept.body, tsquery, _HEADLINE_OPTS)
 
-        conditions = [Concept.search_vector.bool_op("@@")(tsquery), *self._extra_filters(type, tags)]
+        conditions = [
+            Concept.search_vector.bool_op("@@")(tsquery),
+            *self._extra_filters(type, tags, prefix),
+        ]
         where = and_(*conditions)
 
         total = self.s.execute(
@@ -274,10 +321,11 @@ class SqlSearchRepository:
         *,
         type: str | None = None,
         tags: list[str] | None = None,
+        prefix: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SearchHit], int]:
-        where = and_(Concept.embedding.isnot(None), *self._extra_filters(type, tags))
+        where = and_(Concept.embedding.isnot(None), *self._extra_filters(type, tags, prefix))
         distance = Concept.embedding.cosine_distance(query_vec)
         total = self.s.execute(
             select(func.count()).select_from(Concept).where(where)
@@ -316,13 +364,14 @@ class SqlSearchRepository:
         *,
         type: str | None = None,
         tags: list[str] | None = None,
+        prefix: str | None = None,
         limit: int = 50,
         offset: int = 0,
         k: int = 60,
         pool: int = 100,
     ) -> tuple[list[SearchHit], int]:
         """Reciprocal-rank fusion of keyword (ts_rank_cd) and semantic (cosine) rankings."""
-        extra = self._extra_filters(type, tags)
+        extra = self._extra_filters(type, tags, prefix)
         tsquery = func.websearch_to_tsquery("english", q)
 
         keyword_ids = [
@@ -379,3 +428,51 @@ class SqlSearchRepository:
             if cid in rows
         ]
         return hits, total
+
+
+class SqlSyncEventRepository:
+    def __init__(self, session: Session) -> None:
+        self.s = session
+
+    def record(
+        self,
+        *,
+        bundle: str,
+        source: str = "webhook",
+        commit_sha: str | None = None,
+        commit_message: str | None = None,
+        pusher: str | None = None,
+        ref: str | None = None,
+        created_count: int = 0,
+        updated_count: int = 0,
+        deleted_count: int = 0,
+        error_count: int = 0,
+        status: str = "ok",
+    ) -> SyncEvent:
+        ev = SyncEvent(
+            bundle=bundle,
+            source=source,
+            commit_sha=commit_sha,
+            commit_message=commit_message,
+            pusher=pusher,
+            ref=ref,
+            created_count=created_count,
+            updated_count=updated_count,
+            deleted_count=deleted_count,
+            error_count=error_count,
+            status=status,
+        )
+        self.s.add(ev)
+        self.s.flush()
+        return ev
+
+    def latest(self, bundle: str | None = None) -> SyncEvent | None:
+        stmt = select(SyncEvent)
+        if bundle:
+            stmt = stmt.where(SyncEvent.bundle == bundle)
+        stmt = stmt.order_by(SyncEvent.synced_at.desc(), SyncEvent.id.desc()).limit(1)
+        return self.s.execute(stmt).scalar_one_or_none()
+
+    def list(self, limit: int = 20) -> builtins.list[SyncEvent]:
+        stmt = select(SyncEvent).order_by(SyncEvent.synced_at.desc(), SyncEvent.id.desc()).limit(limit)
+        return builtins.list(self.s.execute(stmt).scalars())

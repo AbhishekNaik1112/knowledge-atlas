@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Text,
     create_engine,
     func,
@@ -89,6 +90,26 @@ class Edge(Base):
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
 
     __table_args__ = (Index("idx_edges_target", "target_id"),)
+
+
+class SyncEvent(Base):
+    __tablename__ = "sync_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    bundle: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="webhook")
+    commit_sha: Mapped[str | None] = mapped_column(Text)
+    commit_message: Mapped[str | None] = mapped_column(Text)
+    pusher: Mapped[str | None] = mapped_column(Text)
+    ref: Mapped[str | None] = mapped_column(Text)
+    created_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    deleted_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="ok")
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 def make_engine(url: str | None = None) -> Engine:

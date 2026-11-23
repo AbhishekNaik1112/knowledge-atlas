@@ -35,20 +35,28 @@ class IngestService:
         self.session = session
         self.embedder = embedder
 
-    def ingest_dir(self, dir_path: str, bundle: str | None = None) -> IngestResult:
+    def ingest_dir(
+        self, dir_path: str, bundle: str | None = None, *, prune: bool = False
+    ) -> IngestResult:
         # NOTE: reads an arbitrary server-side path (local/self-host tool). Guard behind auth
         # before exposing publicly (Phase C).
         name, entries = read_dir(dir_path)
-        return self._ingest(entries, bundle or name)
+        return self._ingest(entries, bundle or name, prune=prune)
 
-    def ingest_zip(self, data: bytes, bundle: str = "default") -> IngestResult:
-        return self._ingest(read_zip(data), bundle)
+    def ingest_zip(
+        self, data: bytes, bundle: str = "default", *, prune: bool = False
+    ) -> IngestResult:
+        return self._ingest(read_zip(data), bundle, prune=prune)
 
-    def _ingest(self, entries: list[BundleEntry], bundle: str) -> IngestResult:
-        created = updated = skipped = 0
+    def _ingest(
+        self, entries: list[BundleEntry], bundle: str, *, prune: bool = False
+    ) -> IngestResult:
+        created = updated = skipped = deleted = 0
         errors: list[IngestError] = []
         bodies: dict[str, str] = {}
         embed_sources: dict[str, str] = {}
+        seen_ids: set[str] = set()
+        created_ids: list[str] = []
 
         for entry in entries:
             if is_structural_file(entry.rel_path):
@@ -59,14 +67,27 @@ class IngestService:
             except (MissingTypeError, InvalidFrontmatterError) as exc:
                 errors.append(IngestError(path=entry.rel_path, reason=str(exc)))
                 continue
+            seen_ids.add(parsed.id)
             existed = self.concepts.get(parsed.id) is not None
             self.concepts.upsert(ConceptInput.from_parsed(parsed))
-            updated += existed
-            created += not existed
+            if existed:
+                updated += 1
+            else:
+                created += 1
+                created_ids.append(parsed.id)
             bodies[parsed.id] = parsed.body
             embed_sources[parsed.id] = " ".join(
                 x for x in (parsed.title, parsed.description, parsed.body) if x
             )
+
+        if prune:
+            deleted_ids = self.concepts.delete_missing_in_bundle(bundle, seen_ids)
+            deleted = len(deleted_ids)
+            for cid in deleted_ids:
+                self.edges.mark_resolved_for_target(cid, False)
+
+        for cid in created_ids:
+            self.edges.mark_resolved_for_target(cid, True)
 
         for concept_id, body in bodies.items():
             edges = [
@@ -91,5 +112,6 @@ class IngestService:
             created=created,
             updated=updated,
             skipped=skipped,
+            deleted=deleted,
             errors=errors,
         )

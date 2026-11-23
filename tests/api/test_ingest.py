@@ -84,3 +84,17 @@ def test_ingest_bad_yaml_nonfatal(client, tmp_path):
     body = r.json()
     assert body["created"] == 1
     assert [e["path"] for e in body["errors"]] == ["broken.md"]
+
+
+def test_ingest_prune_deletes_removed_concepts(client, tmp_path):
+    (tmp_path / "keep.md").write_text("---\ntype: Doc\n---\nkeep", encoding="utf-8")
+    (tmp_path / "drop.md").write_text("---\ntype: Doc\n---\ndrop", encoding="utf-8")
+    r1 = client.post("/ingest", params={"path": str(tmp_path), "bundle": "b1", "prune": "true"})
+    assert r1.status_code == 200 and r1.json()["created"] == 2
+
+    (tmp_path / "drop.md").unlink()
+    r2 = client.post("/ingest", params={"path": str(tmp_path), "bundle": "b1", "prune": "true"})
+    assert r2.status_code == 200
+    assert r2.json()["deleted"] == 1
+    assert client.get("/concepts/drop").status_code == 404
+    assert client.get("/concepts/keep").status_code == 200

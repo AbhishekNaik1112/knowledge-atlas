@@ -12,7 +12,12 @@ from app.config import Settings, get_settings
 from app.db import get_session
 from app.embeddings import Embedder, get_embedder
 from app.ingest import IngestService
-from app.repository import SqlConceptRepository, SqlEdgeRepository, SqlSearchRepository
+from app.repository import (
+    SqlConceptRepository,
+    SqlEdgeRepository,
+    SqlSearchRepository,
+    SqlSyncEventRepository,
+)
 from app.services import ConceptService
 from app.webhook import RepoSyncer
 
@@ -53,8 +58,17 @@ def get_ingest_service(
     )
 
 
+def get_sync_repo(session: Session = Depends(get_session)) -> SqlSyncEventRepository:
+    return SqlSyncEventRepository(session)
+
+
 def get_repo_syncer(
     settings: Settings = Depends(get_settings),
     embedder: Embedder = Depends(get_embedder),
 ) -> RepoSyncer:
-    return RepoSyncer(embedder=embedder if settings.embeddings_enabled else None)
+    return RepoSyncer(
+        embedder=embedder if settings.embeddings_enabled else None,
+        sync_subdir=settings.github_sync_subdir,
+        sync_branch=settings.github_sync_branch,
+        github_token=settings.github_token,
+    )

@@ -110,3 +110,72 @@ def test_repo_syncer_clones_and_ingests_real_git_repo(db_session, tmp_path, monk
     assert obj.embedding is not None
     db_session.delete(obj)
     db_session.commit()
+
+
+def test_repo_syncer_prunes_deleted_and_records_sync_event(db_session, tmp_path, monkeypatch, client):
+    import subprocess
+    from app.db import Concept, SyncEvent
+    from app.webhook import RepoSyncer
+
+    work = tmp_path / "work"
+    bare = tmp_path / "remote.git"
+    work.mkdir()
+    subprocess.run(["git", "init", "-b", "main", str(work)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "Test"], check=True)
+    (work / "README.md").write_text("# Non-OKF README", encoding="utf-8")
+    (work / "docs").mkdir()
+    (work / "docs" / "a.md").write_text("---\ntype: Doc\ntitle: A\n---\na", encoding="utf-8")
+    (work / "docs" / "b.md").write_text("---\ntype: Doc\ntitle: B\n---\nb", encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-m", "add docs"], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
+
+    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    syncer = RepoSyncer(sync_subdir="docs")
+
+    # Non-default branch is ignored
+    syncer.sync({
+        "ref": "refs/heads/feature",
+        "repository": {"clone_url": str(bare), "name": "team-docs", "default_branch": "main"},
+    })
+    assert db_session.get(Concept, "a") is None
+
+    # Default branch syncs docs/ (ignoring root README.md) and records SyncEvent
+    syncer.sync({
+        "ref": "refs/heads/main",
+        "after": "abc1234567890",
+        "pusher": {"name": "alice"},
+        "head_commit": {"message": "add docs"},
+        "repository": {"clone_url": str(bare), "name": "team-docs", "default_branch": "main"},
+    })
+    assert db_session.get(Concept, "a") is not None
+    assert db_session.get(Concept, "b") is not None
+
+    # Delete b.md and re-sync -> b is pruned
+    (work / "docs" / "b.md").unlink()
+    subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-m", "remove b"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(work), "push", str(bare), "main"], check=True, capture_output=True)
+
+    syncer.sync({
+        "ref": "refs/heads/main",
+        "after": "def9876543210",
+        "pusher": {"name": "bob"},
+        "head_commit": {"message": "remove b"},
+        "repository": {"clone_url": str(bare), "name": "team-docs", "default_branch": "main"},
+    })
+    db_session.expire_all()
+    assert db_session.get(Concept, "a") is not None
+    assert db_session.get(Concept, "b") is None
+
+    syncs = client.get("/syncs").json()
+    assert len(syncs) >= 2
+    assert syncs[0]["commit_sha"] == "def9876543210"
+    assert syncs[0]["deleted_count"] == 1
+    assert syncs[0]["pusher"] == "bob"
+
+    db_session.query(SyncEvent).delete()
+    if (obj := db_session.get(Concept, "a")) is not None:
+        db_session.delete(obj)
+    db_session.commit()

@@ -16,17 +16,18 @@ router = APIRouter(tags=["ingest"])
 async def ingest(
     path: str | None = Query(None, description="server-side directory of an OKF bundle"),
     bundle: str | None = Query(None),
+    prune: bool = Query(False, description="delete bundle concepts absent from the input"),
     file: UploadFile | None = File(None),
     svc: IngestService = Depends(get_ingest_service),
 ) -> IngestResult:
     if file is not None:
         try:
-            return svc.ingest_zip(await file.read(), bundle=bundle or "default")
+            return svc.ingest_zip(await file.read(), bundle=bundle or "default", prune=prune)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
     if path is not None:
         try:
-            return svc.ingest_dir(path, bundle=bundle)
+            return svc.ingest_dir(path, bundle=bundle, prune=prune)
         except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
     raise HTTPException(status_code=400, detail="provide a zip file or a directory path")

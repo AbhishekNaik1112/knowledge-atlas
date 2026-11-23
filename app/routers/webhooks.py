@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 
 from app.config import Settings, get_settings
-from app.dependencies import get_repo_syncer
+from app.dependencies import get_repo_syncer, get_sync_repo
+from app.models import SyncEventOut
+from app.repository import SqlSyncEventRepository
 from app.webhook import RepoSyncer, verify_signature
 
 router = APIRouter(tags=["webhooks"])
@@ -34,3 +36,11 @@ async def github_webhook(
         raise HTTPException(status_code=400, detail=f"invalid json payload: {exc}") from exc
     background.add_task(syncer.sync, payload)
     return {"status": "accepted"}
+
+
+@router.get("/syncs", response_model=list[SyncEventOut])
+def list_sync_events(
+    limit: int = Query(20, ge=1, le=100),
+    syncs: SqlSyncEventRepository = Depends(get_sync_repo),
+) -> list[SyncEventOut]:
+    return [SyncEventOut.model_validate(e) for e in syncs.list(limit=limit)]

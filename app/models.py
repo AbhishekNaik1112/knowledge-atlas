@@ -133,4 +133,23 @@ class IngestResult(BaseModel):
     created: int
     updated: int
     skipped: int
+    deleted: int = 0
     errors: list[IngestError] = []
+
+
+class SyncEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    bundle: str
+    source: str
+    commit_sha: str | None
+    commit_message: str | None
+    pusher: str | None
+    ref: str | None
+    created_count: int
+    updated_count: int
+    deleted_count: int
+    error_count: int
+    status: str
+    synced_at: dt.datetime

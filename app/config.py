@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://okf:okf@localhost:5433/okf"
     api_key: str | None = None
     github_webhook_secret: str | None = None
+    github_sync_subdir: str | None = None
+    github_sync_branch: str | None = None
+    github_token: str | None = None
 
     embeddings_enabled: bool = False
     embedding_model: str = "all-MiniLM-L6-v2"
