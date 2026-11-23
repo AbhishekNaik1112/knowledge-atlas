@@ -4,23 +4,27 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.bundle import read_dir, read_zip
 from app.models import ValidationIssueOut, ValidationReport
 from app.rules import validate_bundle
+from app.security import require_api_key
 
 router = APIRouter(tags=["validate"])
 
 
-@router.post("/validate", response_model=ValidationReport)
+@router.post("/validate", response_model=ValidationReport, dependencies=[Depends(require_api_key)])
 async def validate(
     path: str | None = Query(None, description="server-side directory of an OKF bundle"),
     file: UploadFile | None = File(None),
 ) -> ValidationReport:
     if file is not None:
         bundle_name = "uploaded"
-        entries = read_zip(await file.read())
+        try:
+            entries = read_zip(await file.read())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     elif path is not None:
         try:
             bundle_name, entries = read_dir(path)

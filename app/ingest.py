@@ -13,7 +13,7 @@ from app.bundle import BundleEntry, read_dir, read_zip
 from app.embeddings import Embedder
 from app.links import resolved_links
 from app.models import IngestError, IngestResult
-from app.parser import MissingTypeError, is_structural_file, parse_concept
+from app.parser import InvalidFrontmatterError, MissingTypeError, is_structural_file, parse_concept
 from app.repository import (
     ConceptInput,
     EdgeInput,
@@ -56,7 +56,7 @@ class IngestService:
                 continue
             try:
                 parsed = parse_concept(entry.rel_path, entry.text, bundle)
-            except MissingTypeError as exc:
+            except (MissingTypeError, InvalidFrontmatterError) as exc:
                 errors.append(IngestError(path=entry.rel_path, reason=str(exc)))
                 continue
             existed = self.concepts.get(parsed.id) is not None

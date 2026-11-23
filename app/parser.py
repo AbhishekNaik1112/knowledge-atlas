@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import frontmatter
+import yaml
 
 KNOWN_FIELDS = {"type", "title", "description", "resource", "tags", "timestamp"}
 STRUCTURAL_FILES = {"index.md", "log.md"}
@@ -19,6 +20,14 @@ STRUCTURAL_FILES = {"index.md", "log.md"}
 
 class MissingTypeError(ValueError):
     """Raised when a concept file lacks the required non-empty `type` field."""
+
+
+class InvalidFrontmatterError(ValueError):
+    """Raised when a concept file has malformed YAML frontmatter."""
+
+
+def _opt_str(val: object) -> str | None:
+    return val if isinstance(val, str) else None
 
 
 @dataclass(frozen=True)
@@ -91,7 +100,10 @@ def _coerce_timestamp(raw: Any) -> dt.datetime | None:
 
 def parse_concept(rel_path: str, raw_text: str, bundle: str) -> ParsedConcept:
     """Parse a single OKF Markdown file. Raises MissingTypeError if `type` is absent/blank."""
-    post = frontmatter.loads(raw_text)
+    try:
+        post = frontmatter.loads(raw_text)
+    except yaml.YAMLError as exc:
+        raise InvalidFrontmatterError(f"{rel_path!r} has invalid YAML frontmatter: {exc}") from exc
     meta = post.metadata
 
     type_ = meta.get("type")
@@ -104,9 +116,9 @@ def parse_concept(rel_path: str, raw_text: str, bundle: str) -> ParsedConcept:
         id=derive_id(rel_path),
         bundle=bundle,
         type=type_.strip(),
-        title=meta.get("title"),
-        description=meta.get("description"),
-        resource=meta.get("resource"),
+        title=_opt_str(meta.get("title")),
+        description=_opt_str(meta.get("description")),
+        resource=_opt_str(meta.get("resource")),
         timestamp=_coerce_timestamp(meta.get("timestamp")),
         tags=normalize_tags(meta.get("tags")),
         body=post.content,

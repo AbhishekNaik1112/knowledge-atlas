@@ -28,6 +28,9 @@ async def github_webhook(
     if not verify_signature(settings.github_webhook_secret, body, x_hub_signature_256):
         raise HTTPException(status_code=401, detail="invalid signature")
 
-    payload = json.loads(body or b"{}")
+    try:
+        payload = json.loads(body or b"{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid json payload: {exc}") from exc
     background.add_task(syncer.sync, payload)
     return {"status": "accepted"}

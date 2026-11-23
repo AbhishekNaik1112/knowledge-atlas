@@ -20,7 +20,10 @@ async def ingest(
     svc: IngestService = Depends(get_ingest_service),
 ) -> IngestResult:
     if file is not None:
-        return svc.ingest_zip(await file.read(), bundle=bundle or "default")
+        try:
+            return svc.ingest_zip(await file.read(), bundle=bundle or "default")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     if path is not None:
         try:
             return svc.ingest_dir(path, bundle=bundle)

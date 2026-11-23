@@ -31,3 +31,17 @@ def test_validate_does_not_persist(client, tmp_path):
     (tmp_path / "a.md").write_text("---\ntype: Doc\n---\nx", encoding="utf-8")
     client.post("/validate", params={"path": str(tmp_path)})
     assert client.get("/concepts").json()["total"] == 0
+
+
+def test_validate_corrupt_zip_400(client):
+    r = client.post("/validate", files={"file": ("bad.zip", b"not-a-zip", "application/zip")})
+    assert r.status_code == 400
+
+
+def test_validate_bad_yaml_invalid(client, tmp_path):
+    (tmp_path / "broken.md").write_text("---\ntype: [unclosed\n---\nbad", encoding="utf-8")
+    r = client.post("/validate", params={"path": str(tmp_path)})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["valid"] is False
+    assert any(i["path"] == "broken.md" and i["severity"] == "error" for i in body["issues"])

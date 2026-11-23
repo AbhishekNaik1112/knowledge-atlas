@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from app.links import resolved_links
 from app.parser import (
+    InvalidFrontmatterError,
     MissingTypeError,
     ParsedConcept,
     derive_id,
@@ -51,6 +52,11 @@ def validate_bundle(entries: Iterable[tuple[str, str]]) -> BundleValidation:
         except MissingTypeError as exc:
             issues.append(
                 ValidationIssue(rel_path, concept_id, "missing_type", "error", str(exc))
+            )
+            continue
+        except InvalidFrontmatterError as exc:
+            issues.append(
+                ValidationIssue(rel_path, concept_id, "invalid_frontmatter", "error", str(exc))
             )
             continue
         parsed.append((rel_path, concept))

@@ -61,3 +61,26 @@ def test_ingest_type_errors_nonfatal(client, tmp_path):
     body = client.post("/ingest", params={"path": str(tmp_path)}).json()
     assert body["created"] == 1
     assert [e["path"] for e in body["errors"]] == ["bad.md"]
+
+
+def test_ingest_corrupt_zip_400(client):
+    r = client.post("/ingest", files={"file": ("bad.zip", b"not-a-zip", "application/zip")})
+    assert r.status_code == 400
+
+
+def test_ingest_non_utf8_zip_400(client):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("bad.md", b"\xff\xfe\x00\x00invalid")
+    r = client.post("/ingest", files={"file": ("bad_enc.zip", buf.getvalue(), "application/zip")})
+    assert r.status_code == 400
+
+
+def test_ingest_bad_yaml_nonfatal(client, tmp_path):
+    (tmp_path / "good.md").write_text("---\ntype: Doc\n---\nok", encoding="utf-8")
+    (tmp_path / "broken.md").write_text("---\ntype: [unclosed\n---\nbad", encoding="utf-8")
+    r = client.post("/ingest", params={"path": str(tmp_path)})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["created"] == 1
+    assert [e["path"] for e in body["errors"]] == ["broken.md"]

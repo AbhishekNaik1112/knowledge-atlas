@@ -43,3 +43,14 @@ def test_read_not_protected(auth_client):
 def test_auth_disabled_by_default(client):
     # default client fixture has api_key=None -> writes are open
     assert client.post("/concepts", json=_payload()).status_code == 201
+
+
+def test_validate_requires_key_when_configured(auth_client, tmp_path):
+    (tmp_path / "a.md").write_text("---\ntype: Doc\n---\nx", encoding="utf-8")
+    assert auth_client.post("/validate", params={"path": str(tmp_path)}).status_code == 401
+    assert (
+        auth_client.post(
+            "/validate", params={"path": str(tmp_path)}, headers={"X-API-Key": "secret"}
+        ).status_code
+        == 200
+    )

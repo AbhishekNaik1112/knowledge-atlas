@@ -14,23 +14,33 @@ class BundleEntry:
     text: str
 
 
+class BundleReadError(ValueError):
+    """Raised when a bundle directory or zip cannot be read or decoded."""
+
+
 def read_dir(dir_path: str) -> tuple[str, list[BundleEntry]]:
     """Return (bundle_name, entries) for every .md under dir_path. Raises ValueError if not a dir."""
     root = Path(dir_path)
     if not root.is_dir():
-        raise ValueError(f"not a directory: {dir_path}")
-    entries = [
-        BundleEntry(p.relative_to(root).as_posix(), p.read_text(encoding="utf-8"))
-        for p in sorted(root.rglob("*.md"))
-    ]
+        raise BundleReadError(f"not a directory: {dir_path}")
+    try:
+        entries = [
+            BundleEntry(p.relative_to(root).as_posix(), p.read_text(encoding="utf-8"))
+            for p in sorted(root.rglob("*.md"))
+        ]
+    except UnicodeDecodeError as exc:
+        raise BundleReadError(f"invalid UTF-8 encoding in bundle: {exc}") from exc
     return root.name, entries
 
 
 def read_zip(data: bytes) -> list[BundleEntry]:
     entries: list[BundleEntry] = []
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        for name in sorted(zf.namelist()):
-            if name.endswith("/") or not name.lower().endswith(".md"):
-                continue
-            entries.append(BundleEntry(name, zf.read(name).decode("utf-8")))
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            for name in sorted(zf.namelist()):
+                if name.endswith("/") or not name.lower().endswith(".md"):
+                    continue
+                entries.append(BundleEntry(name, zf.read(name).decode("utf-8")))
+    except (zipfile.BadZipFile, UnicodeDecodeError) as exc:
+        raise BundleReadError(f"invalid zip bundle: {exc}") from exc
     return entries
