@@ -77,34 +77,49 @@ class RepoSyncer:
         pusher = (payload.get("pusher") or {}).get("name")
 
         with tempfile.TemporaryDirectory() as tmp:
-            cmd = ["git", "clone", "--depth", "1"]
-            if target_branch:
-                cmd.extend(["--branch", target_branch])
-            cmd.extend([self._auth_clone_url(clone_url), tmp])
-            subprocess.run(cmd, check=True, capture_output=True)
+            try:
+                cmd = ["git", "clone", "--depth", "1"]
+                if target_branch:
+                    cmd.extend(["--branch", target_branch])
+                cmd.extend([self._auth_clone_url(clone_url), tmp])
+                subprocess.run(cmd, check=True, capture_output=True)
 
-            target_dir = Path(tmp) / subdir if subdir else Path(tmp)
-            with Session(make_engine()) as session:
-                service = IngestService(
-                    SqlConceptRepository(session),
-                    SqlEdgeRepository(session),
-                    session,
-                    embedder=self.embedder,
-                )
-                res = service.ingest_dir(
-                    str(target_dir), bundle=name, prune=True, namespace_ids=namespace_ids
-                )
-                SqlSyncEventRepository(session).record(
-                    bundle=name,
-                    source="webhook",
-                    commit_sha=commit_sha,
-                    commit_message=commit_message,
-                    pusher=pusher,
-                    ref=ref,
-                    created_count=res.created,
-                    updated_count=res.updated,
-                    deleted_count=res.deleted,
-                    error_count=len(res.errors),
-                    status="ok" if not res.errors else "partial",
-                )
-                session.commit()
+                target_dir = Path(tmp) / subdir if subdir else Path(tmp)
+                with Session(make_engine()) as session:
+                    service = IngestService(
+                        SqlConceptRepository(session),
+                        SqlEdgeRepository(session),
+                        session,
+                        embedder=self.embedder,
+                    )
+                    res = service.ingest_dir(
+                        str(target_dir), bundle=name, prune=True, namespace_ids=namespace_ids
+                    )
+                    SqlSyncEventRepository(session).record(
+                        bundle=name,
+                        source="webhook",
+                        commit_sha=commit_sha,
+                        commit_message=commit_message,
+                        pusher=pusher,
+                        ref=ref,
+                        created_count=res.created,
+                        updated_count=res.updated,
+                        deleted_count=res.deleted,
+                        error_count=len(res.errors),
+                        status="ok" if not res.errors else "partial",
+                    )
+                    session.commit()
+            except Exception as exc:
+                with Session(make_engine()) as session:
+                    SqlSyncEventRepository(session).record(
+                        bundle=name,
+                        source="webhook",
+                        commit_sha=commit_sha,
+                        commit_message=f"{commit_message or ''} ({type(exc).__name__}: {exc})".strip(),
+                        pusher=pusher,
+                        ref=ref,
+                        error_count=1,
+                        status="error",
+                    )
+                    session.commit()
+                raise
