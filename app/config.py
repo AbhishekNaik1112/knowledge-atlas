@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     github_sync_subdir: str | None = None
     github_sync_branch: str | None = None
     github_token: str | None = None
+    github_repo_url: str | None = None
+    namespace_by_bundle: bool = False
+    github_repos_config: dict[str, dict[str, str]] = {}
 
     embeddings_enabled: bool = False
     embedding_model: str = "all-MiniLM-L6-v2"

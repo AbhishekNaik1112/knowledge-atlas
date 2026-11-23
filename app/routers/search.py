@@ -21,6 +21,7 @@ def search(
     mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
     type: str | None = Query(None),
     tags: list[str] = Query(default=[]),
+    bundle: str | None = Query(None),
     limit: int | None = Query(None, ge=1),
     offset: int = Query(0, ge=0),
     repo: SqlSearchRepository = Depends(get_search_repo),
@@ -36,7 +37,7 @@ def search(
 
     if mode == "keyword":
         hits, total = repo.search(
-            q, type=type, tags=tag_filter, limit=effective_limit, offset=offset
+            q, type=type, tags=tag_filter, bundle=bundle, limit=effective_limit, offset=offset
         )
     else:
         if not settings.embeddings_enabled:
@@ -44,11 +45,22 @@ def search(
         query_vec = embedder.encode([q])[0]
         if mode == "semantic":
             hits, total = repo.semantic(
-                query_vec, type=type, tags=tag_filter, limit=effective_limit, offset=offset
+                query_vec,
+                type=type,
+                tags=tag_filter,
+                bundle=bundle,
+                limit=effective_limit,
+                offset=offset,
             )
         else:  # hybrid
             hits, total = repo.hybrid(
-                q, query_vec, type=type, tags=tag_filter, limit=effective_limit, offset=offset
+                q,
+                query_vec,
+                type=type,
+                tags=tag_filter,
+                bundle=bundle,
+                limit=effective_limit,
+                offset=offset,
             )
 
     return Page(

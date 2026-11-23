@@ -98,3 +98,23 @@ def test_ingest_prune_deletes_removed_concepts(client, tmp_path):
     assert r2.json()["deleted"] == 1
     assert client.get("/concepts/drop").status_code == 404
     assert client.get("/concepts/keep").status_code == 200
+
+
+def test_ingest_namespace_ids_prevents_multi_repo_collision(client, tmp_path):
+    repo_a = tmp_path / "repo_a"
+    repo_b = tmp_path / "repo_b"
+    repo_a.mkdir()
+    repo_b.mkdir()
+    (repo_a / "auth.md").write_text("---\ntype: Doc\ntitle: Repo A Auth\n---\nsee [b](@repo_b/auth.md)", encoding="utf-8")
+    (repo_b / "auth.md").write_text("---\ntype: Doc\ntitle: Repo B Auth\n---\nhello", encoding="utf-8")
+
+    ra = client.post("/ingest", params={"path": str(repo_a), "bundle": "repo_a", "namespace_ids": "true"})
+    rb = client.post("/ingest", params={"path": str(repo_b), "bundle": "repo_b", "namespace_ids": "true"})
+    assert ra.status_code == 200 and rb.status_code == 200
+
+    a = client.get("/concepts/repo_a/auth").json()
+    b = client.get("/concepts/repo_b/auth").json()
+    assert a["title"] == "Repo A Auth" and b["title"] == "Repo B Auth"
+    links = client.get("/concepts/repo_a/auth/links").json()
+    assert links["outgoing"][0]["target_id"] == "repo_b/auth"
+    assert links["outgoing"][0]["resolved"] is True

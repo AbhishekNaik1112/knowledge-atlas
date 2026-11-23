@@ -7,6 +7,8 @@ target is 'resolved' only once its concept exists).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from sqlalchemy.orm import Session
 
 from app.bundle import BundleEntry, read_dir, read_zip
@@ -36,20 +38,35 @@ class IngestService:
         self.embedder = embedder
 
     def ingest_dir(
-        self, dir_path: str, bundle: str | None = None, *, prune: bool = False
+        self,
+        dir_path: str,
+        bundle: str | None = None,
+        *,
+        prune: bool = False,
+        namespace_ids: bool = False,
     ) -> IngestResult:
         # NOTE: reads an arbitrary server-side path (local/self-host tool). Guard behind auth
         # before exposing publicly (Phase C).
         name, entries = read_dir(dir_path)
-        return self._ingest(entries, bundle or name, prune=prune)
+        return self._ingest(entries, bundle or name, prune=prune, namespace_ids=namespace_ids)
 
     def ingest_zip(
-        self, data: bytes, bundle: str = "default", *, prune: bool = False
+        self,
+        data: bytes,
+        bundle: str = "default",
+        *,
+        prune: bool = False,
+        namespace_ids: bool = False,
     ) -> IngestResult:
-        return self._ingest(read_zip(data), bundle, prune=prune)
+        return self._ingest(read_zip(data), bundle, prune=prune, namespace_ids=namespace_ids)
 
     def _ingest(
-        self, entries: list[BundleEntry], bundle: str, *, prune: bool = False
+        self,
+        entries: list[BundleEntry],
+        bundle: str,
+        *,
+        prune: bool = False,
+        namespace_ids: bool = False,
     ) -> IngestResult:
         created = updated = skipped = deleted = 0
         errors: list[IngestError] = []
@@ -67,6 +84,8 @@ class IngestService:
             except (MissingTypeError, InvalidFrontmatterError) as exc:
                 errors.append(IngestError(path=entry.rel_path, reason=str(exc)))
                 continue
+            if namespace_ids and not parsed.id.startswith(f"{bundle}/"):
+                parsed = replace(parsed, id=f"{bundle}/{parsed.id}")
             seen_ids.add(parsed.id)
             existed = self.concepts.get(parsed.id) is not None
             self.concepts.upsert(ConceptInput.from_parsed(parsed))

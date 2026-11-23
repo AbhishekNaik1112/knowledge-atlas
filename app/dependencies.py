@@ -71,4 +71,6 @@ def get_repo_syncer(
         sync_subdir=settings.github_sync_subdir,
         sync_branch=settings.github_sync_branch,
         github_token=settings.github_token,
+        namespace_by_bundle=settings.namespace_by_bundle,
+        repos_config=settings.github_repos_config,
     )

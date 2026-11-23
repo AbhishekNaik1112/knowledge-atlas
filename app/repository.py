@@ -119,11 +119,16 @@ class SqlConceptRepository:
                 folders.add(cid.split("/", 1)[0])
         return sorted(types), sorted(tags), sorted(folders)
 
+    def distinct_bundles(self) -> builtins.list[str]:
+        rows = self.s.execute(select(Concept.bundle).distinct().order_by(Concept.bundle)).scalars()
+        return builtins.list(rows)
+
     def list(
         self,
         *,
         type: str | None = None,
         tags: builtins.list[str] | None = None,
+        bundle: str | None = None,
         prefix: str | None = None,
         sort: Literal["id", "updated"] = "id",
         limit: int = 50,
@@ -134,6 +139,8 @@ class SqlConceptRepository:
             conditions.append(Concept.type == type)
         if tags:
             conditions.append(Concept.tags.contains(tags))  # array @> => AND semantics
+        if bundle:
+            conditions.append(Concept.bundle == bundle)
         if prefix:
             clean = prefix.strip("/")
             conditions.append(Concept.id.startswith(f"{clean}/"))
@@ -252,13 +259,18 @@ class SqlSearchRepository:
 
     @staticmethod
     def _extra_filters(
-        type: str | None, tags: list[str] | None, prefix: str | None = None
+        type: str | None,
+        tags: list[str] | None,
+        prefix: str | None = None,
+        bundle: str | None = None,
     ) -> list:
         conditions = []
         if type:
             conditions.append(Concept.type == type)
         if tags:
             conditions.append(Concept.tags.contains(tags))
+        if bundle:
+            conditions.append(Concept.bundle == bundle)
         if prefix:
             conditions.append(Concept.id.startswith(f"{prefix.strip('/')}/"))
         return conditions
@@ -270,6 +282,7 @@ class SqlSearchRepository:
         type: str | None = None,
         tags: list[str] | None = None,
         prefix: str | None = None,
+        bundle: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SearchHit], int]:
@@ -279,7 +292,7 @@ class SqlSearchRepository:
 
         conditions = [
             Concept.search_vector.bool_op("@@")(tsquery),
-            *self._extra_filters(type, tags, prefix),
+            *self._extra_filters(type, tags, prefix, bundle),
         ]
         where = and_(*conditions)
 
@@ -322,10 +335,13 @@ class SqlSearchRepository:
         type: str | None = None,
         tags: list[str] | None = None,
         prefix: str | None = None,
+        bundle: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[SearchHit], int]:
-        where = and_(Concept.embedding.isnot(None), *self._extra_filters(type, tags, prefix))
+        where = and_(
+            Concept.embedding.isnot(None), *self._extra_filters(type, tags, prefix, bundle)
+        )
         distance = Concept.embedding.cosine_distance(query_vec)
         total = self.s.execute(
             select(func.count()).select_from(Concept).where(where)
@@ -365,13 +381,14 @@ class SqlSearchRepository:
         type: str | None = None,
         tags: list[str] | None = None,
         prefix: str | None = None,
+        bundle: str | None = None,
         limit: int = 50,
         offset: int = 0,
         k: int = 60,
         pool: int = 100,
     ) -> tuple[list[SearchHit], int]:
         """Reciprocal-rank fusion of keyword (ts_rank_cd) and semantic (cosine) rankings."""
-        extra = self._extra_filters(type, tags, prefix)
+        extra = self._extra_filters(type, tags, prefix, bundle)
         tsquery = func.websearch_to_tsquery("english", q)
 
         keyword_ids = [

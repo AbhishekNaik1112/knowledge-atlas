@@ -73,6 +73,7 @@ def create_concept(
 def list_concepts(
     type: str | None = Query(None),
     tags: list[str] = Query(default=[]),
+    bundle: str | None = Query(None),
     limit: int | None = Query(None, ge=1),
     offset: int = Query(0, ge=0),
     svc: ConceptService = Depends(get_concept_service),
@@ -85,7 +86,7 @@ def list_concepts(
         )
     normalized_tags = [t.strip().lower() for t in tags if t.strip()] or None
     items, total = svc.list(
-        type=type, tags=normalized_tags, limit=effective_limit, offset=offset
+        type=type, tags=normalized_tags, bundle=bundle, limit=effective_limit, offset=offset
     )
     return Page(
         items=[ConceptListItem.model_validate(o) for o in items],

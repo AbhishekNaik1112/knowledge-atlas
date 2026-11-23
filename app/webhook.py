@@ -36,11 +36,15 @@ class RepoSyncer:
         sync_subdir: str | None = None,
         sync_branch: str | None = None,
         github_token: str | None = None,
+        namespace_by_bundle: bool = False,
+        repos_config: dict[str, dict[str, str]] | None = None,
     ) -> None:
         self.embedder = embedder
         self.sync_subdir = sync_subdir
         self.sync_branch = sync_branch
         self.github_token = github_token
+        self.namespace_by_bundle = namespace_by_bundle
+        self.repos_config = repos_config or {}
 
     def _auth_clone_url(self, clone_url: str) -> str:
         if self.github_token and clone_url.startswith("https://"):
@@ -52,12 +56,21 @@ class RepoSyncer:
         clone_url = repo.get("clone_url")
         if not clone_url:
             return
+        name = repo.get("name", "default")
+        repo_cfg = self.repos_config.get(name, {})
         ref = payload.get("ref")
-        target_branch = self.sync_branch or repo.get("default_branch")
+        target_branch = repo_cfg.get("branch") or self.sync_branch or repo.get("default_branch")
         if ref and target_branch and ref != f"refs/heads/{target_branch}":
             return
 
-        name = repo.get("name", "default")
+        subdir = repo_cfg.get("subdir") or self.sync_subdir
+        ns_val = repo_cfg.get("namespace")
+        namespace_ids = (
+            ns_val.lower() in ("1", "true", "yes")
+            if isinstance(ns_val, str)
+            else self.namespace_by_bundle
+        )
+
         head_commit = payload.get("head_commit") or {}
         commit_sha = payload.get("after")
         commit_message = head_commit.get("message")
@@ -70,7 +83,7 @@ class RepoSyncer:
             cmd.extend([self._auth_clone_url(clone_url), tmp])
             subprocess.run(cmd, check=True, capture_output=True)
 
-            target_dir = Path(tmp) / self.sync_subdir if self.sync_subdir else Path(tmp)
+            target_dir = Path(tmp) / subdir if subdir else Path(tmp)
             with Session(make_engine()) as session:
                 service = IngestService(
                     SqlConceptRepository(session),
@@ -78,7 +91,9 @@ class RepoSyncer:
                     session,
                     embedder=self.embedder,
                 )
-                res = service.ingest_dir(str(target_dir), bundle=name, prune=True)
+                res = service.ingest_dir(
+                    str(target_dir), bundle=name, prune=True, namespace_ids=namespace_ids
+                )
                 SqlSyncEventRepository(session).record(
                     bundle=name,
                     source="webhook",

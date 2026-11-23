@@ -47,3 +47,10 @@ def test_ignore_anchor_only_links():
 
 def test_resolve_drops_fragment():
     assert resolve_target("tables/users", "orders.md#schema") == "tables/orders"
+
+
+def test_resolve_cross_repo_at_syntax():
+    assert (
+        resolve_target("frontend/app", "@backend-api/security/jwt.md#claims")
+        == "backend-api/security/jwt"
+    )

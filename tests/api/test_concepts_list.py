@@ -50,3 +50,10 @@ def test_list_filter_tags_case_insensitive(client):
     _create(client, "a", tags=["PostgreSQL"])
     data = client.get("/concepts", params={"tags": "POSTGRESQL"}).json()
     assert [i["id"] for i in data["items"]] == ["a"] and data["total"] == 1
+
+
+def test_list_filter_bundle(client):
+    _create(client, "a", bundle="backend-api")
+    _create(client, "b", bundle="frontend-web")
+    data = client.get("/concepts", params={"bundle": "backend-api"}).json()
+    assert [i["id"] for i in data["items"]] == ["a"] and data["total"] == 1

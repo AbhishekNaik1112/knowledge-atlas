@@ -63,7 +63,9 @@ def resolve_target(source_id: str, href: str) -> str | None:
     if not path:
         return None
 
-    if path.startswith("/"):
+    if path.startswith("@"):
+        target = posixpath.normpath(path[1:].lstrip("/"))
+    elif path.startswith("/"):
         target = path.lstrip("/")
     else:
         source_dir = posixpath.dirname(source_id)
