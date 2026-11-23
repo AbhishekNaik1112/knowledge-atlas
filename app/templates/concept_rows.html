@@ -1,7 +1,25 @@
-<ul>
+{% if concepts %}
+<ul class="grid">
 {% for c in concepts %}
-  <li><a href="/ui/concepts/{{ c.id }}">{{ c.title or c.id }}</a> <small>[{{ c.type }}]</small></li>
-{% else %}
-  <li><em>No concepts.</em></li>
+  <li class="card concept-card">
+    <div class="card-top">
+      <span class="badge {{ c.type }}">{{ c.type }}</span>
+      <small><code>{{ c.id }}</code></small>
+    </div>
+    <a class="card-title" href="/ui/concepts/{{ c.id }}">{{ c.title or c.id }}</a>
+    {% if c.snippet is defined and c.snippet %}
+      <p class="card-desc">{{ c.snippet|safe }}</p>
+    {% elif c.description %}
+      <p class="card-desc">{{ c.description }}</p>
+    {% endif %}
+    {% if c.tags is defined and c.tags %}
+      <div class="card-tags">
+        {% for t in c.tags[:4] %}<span class="tag">{{ t }}</span>{% endfor %}
+      </div>
+    {% endif %}
+  </li>
 {% endfor %}
 </ul>
+{% else %}
+<div class="card empty-state"><em>No concepts.</em></div>
+{% endif %}

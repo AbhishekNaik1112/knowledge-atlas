@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.config import Settings, get_settings
+from app.db import Concept
 from app.dependencies import get_concept_repo, get_edge_repo, get_search_repo
-from app.errors import NotFoundError
+from app.embeddings import Embedder, get_embedder
 from app.render import render_body_html
-from app.repository import SqlConceptRepository, SqlEdgeRepository, SqlSearchRepository
+from app.repository import SearchHit, SqlConceptRepository, SqlEdgeRepository, SqlSearchRepository
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 router = APIRouter(tags=["ui"])
@@ -32,9 +34,15 @@ def ui_search(
     q: str = "",
     concepts: SqlConceptRepository = Depends(get_concept_repo),
     search: SqlSearchRepository = Depends(get_search_repo),
+    settings: Settings = Depends(get_settings),
+    embedder: Embedder = Depends(get_embedder),
 ) -> HTMLResponse:
+    rows: list[Concept] | list[SearchHit]
     if q.strip():
-        rows, _ = search.search(q, limit=50)
+        if settings.embeddings_enabled:
+            rows, _ = search.hybrid(q, embedder.encode([q])[0], limit=50)
+        else:
+            rows, _ = search.search(q, limit=50)
     else:
         rows, _ = concepts.list(limit=200)
     return templates.TemplateResponse(
@@ -56,7 +64,12 @@ def ui_concept(
 ) -> HTMLResponse:
     obj = concepts.get(concept_id)
     if obj is None:
-        raise NotFoundError(f"concept {concept_id!r} not found")
+        return templates.TemplateResponse(
+            request=request,
+            name="404.html",
+            context={"concept_id": concept_id},
+            status_code=404,
+        )
     return templates.TemplateResponse(
         request=request,
         name="concept.html",

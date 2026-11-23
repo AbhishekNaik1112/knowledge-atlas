@@ -1,7 +1,112 @@
 {% extends "base.html" %}
+{% block title %}Catalog — Knowledge Atlas{% endblock %}
+{% block extra_head %}
+<style>
+  .hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: 1rem;
+  }
+  .hero h1 { margin: 0; font-size: 1.75rem; letter-spacing: -.02em; }
+  .search-wrap { position: relative; margin-bottom: 1.5rem; }
+  input[type=search] {
+    width: 100%;
+    padding: .8rem 1rem .8rem 2.6rem;
+    font-size: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type=search]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, .15);
+  }
+  .search-icon {
+    position: absolute;
+    left: .9rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .htmx-indicator {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: .82rem;
+    color: var(--accent);
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 1rem;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .concept-card {
+    padding: 1.05rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    transition: transform .12s, border-color .15s, box-shadow .15s;
+  }
+  .concept-card:hover {
+    transform: translateY(-2px);
+    border-color: #c7d2fe;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, .08);
+  }
+  .card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+  }
+  .card-title {
+    font-weight: 600;
+    font-size: 1.02rem;
+    text-decoration: none;
+    color: var(--text);
+    line-height: 1.35;
+  }
+  .card-title:hover { color: var(--accent); }
+  .card-desc {
+    margin: 0;
+    font-size: .88rem;
+    color: #475569;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: auto; padding-top: .25rem; }
+  .empty-state { padding: 2rem; text-align: center; color: var(--muted); }
+</style>
+{% endblock %}
 {% block content %}
-<h1>Concepts</h1>
-<input type="search" name="q" placeholder="Search concepts…"
-       hx-get="/ui/search" hx-trigger="input changed delay:300ms, search" hx-target="#results">
+<div class="hero">
+  <div>
+    <h1>Knowledge Catalog</h1>
+    <small>Browse OKF concepts or search with hybrid semantic + keyword ranking</small>
+  </div>
+  <span class="badge">{{ concepts|length }} concepts</span>
+</div>
+<div class="search-wrap">
+  <span class="search-icon">&#128269;</span>
+  <input type="search" name="q" placeholder="Search concepts by keyword or meaning (e.g. 'preventing SQL concatenation' or 'ETag')…"
+         hx-get="/ui/search" hx-trigger="input changed delay:300ms, search" hx-target="#results" hx-indicator="#search-spinner">
+  <span id="search-spinner" class="htmx-indicator">Searching…</span>
+</div>
 <div id="results">{% include "concept_rows.html" %}</div>
 {% endblock %}

@@ -26,15 +26,49 @@ def test_ui_concept_shows_outgoing_link(client):
     assert "/ui/concepts/b" in r.text
 
 
-def test_ui_search_partial_filters(client):
-    _create(client, "a", title="Bitcoin", body="ledger")
-    _create(client, "b", title="Banana", body="fruit")
-    r = client.get("/ui/search", params={"q": "bitcoin"})
-    assert r.status_code == 200 and "Bitcoin" in r.text and "Banana" not in r.text
+def test_ui_search_partial_filters(db_session):
+    from fastapi.testclient import TestClient
+    from app.config import Settings, get_settings
+    from app.db import get_session
+    from app.main import create_app
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(embeddings_enabled=False)
+    with TestClient(app) as c:
+        _create(c, "a", title="Bitcoin", body="ledger")
+        _create(c, "b", title="Banana", body="fruit")
+        r = c.get("/ui/search", params={"q": "bitcoin"})
+        assert r.status_code == 200 and "Bitcoin" in r.text and "Banana" not in r.text
+    app.dependency_overrides.clear()
+
+
+def test_ui_search_uses_hybrid_when_embeddings_enabled(db_session):
+    from fastapi.testclient import TestClient
+    from app.config import Settings, get_settings
+    from app.db import get_session
+    from app.embeddings import get_embedder
+    from app.main import create_app
+    from tests.api.test_semantic import FakeEmbedder
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(embeddings_enabled=True)
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    with TestClient(app) as c:
+        _create(c, "b", title="Banana", body="banana bread recipe")
+        _create(c, "a", title="Fast Vehicle", body="the automobile is fast")
+        r = c.get("/ui/search", params={"q": "car"})
+        assert r.status_code == 200
+        assert "Fast Vehicle" in r.text
+        assert r.text.index("Fast Vehicle") < r.text.index("Banana")
+    app.dependency_overrides.clear()
 
 
 def test_ui_missing_concept_404(client):
-    assert client.get("/ui/concepts/ghost").status_code == 404
+    r = client.get("/ui/concepts/ghost")
+    assert r.status_code == 404
+    assert "text/html" in r.headers["content-type"]
 
 
 def test_ui_graph_page_loads_cytoscape(client):

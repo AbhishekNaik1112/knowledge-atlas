@@ -1,27 +1,152 @@
 {% extends "base.html" %}
-{% block title %}Graph{% endblock %}
+{% block title %}Graph — Knowledge Atlas{% endblock %}
+{% block extra_head %}
+<style>
+  .graph-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    margin-bottom: .9rem;
+  }
+  .graph-bar h1 { margin: 0; font-size: 1.65rem; }
+  .graph-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    padding: .4rem .8rem;
+    border-radius: 7px;
+    font-size: .86rem;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    font-size: .82rem;
+    color: var(--muted);
+    margin-bottom: .75rem;
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: .35rem; }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .graph-frame { position: relative; overflow: hidden; }
+  #cy { width: 100%; height: 70vh; min-height: 540px; background: #fcfcfd; }
+  #hover-info {
+    position: absolute;
+    left: 1rem;
+    bottom: 1rem;
+    background: rgba(15, 23, 42, .9);
+    color: #f8fafc;
+    padding: .45rem .8rem;
+    border-radius: 7px;
+    font-size: .84rem;
+    pointer-events: none;
+    display: none;
+  }
+</style>
+{% endblock %}
 {% block content %}
-<h1>Concept graph</h1>
-<p><small>Nodes = concepts, arrows = cross-links.</small></p>
-<div id="cy" style="width:100%; height:600px; border:1px solid #ccc;"></div>
+<div class="graph-bar">
+  <div>
+    <h1>Concept Graph</h1>
+    <small id="graph-stats">Loading graph…</small>
+  </div>
+  <div class="graph-controls">
+    <button class="btn" id="btn-fit" type="button">Fit to screen</button>
+    <button class="btn" id="btn-layout" type="button">Re-layout</button>
+  </div>
+</div>
+<div class="legend">
+  <span class="legend-item"><span class="swatch" style="background:#7c3aed"></span>architecture-guide</span>
+  <span class="legend-item"><span class="swatch" style="background:#2563eb"></span>technical-note</span>
+  <span class="legend-item"><span class="swatch" style="background:#dc2626"></span>security-note</span>
+  <span class="legend-item"><span class="swatch" style="background:#16a34a"></span>pattern</span>
+  <span class="legend-item"><span class="swatch" style="background:#d97706"></span>reference</span>
+</div>
+<div class="card graph-frame">
+  <div id="cy"></div>
+  <div id="hover-info"></div>
+</div>
 <script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
 <script>
+  const TYPE_COLORS = {
+    'architecture-guide': '#7c3aed',
+    'technical-note': '#2563eb',
+    'security-note': '#dc2626',
+    'pattern': '#16a34a',
+    'reference': '#d97706'
+  };
   fetch('/graph').then(r => r.json()).then(g => {
+    document.getElementById('graph-stats').textContent =
+      `${g.nodes.length} concepts · ${g.edges.length} resolved cross-links (click any node to open)`;
     const elements = [];
-    g.nodes.forEach(n => elements.push({ data: { id: n.id, label: n.title || n.id } }));
+    g.nodes.forEach(n => elements.push({
+      data: {
+        id: n.id,
+        label: n.title || n.id,
+        type: n.type,
+        color: TYPE_COLORS[n.type] || '#4f46e5'
+      }
+    }));
     g.edges.forEach(e => elements.push({ data: { source: e.source, target: e.target } }));
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: elements,
       style: [
-        { selector: 'node', style: { 'label': 'data(label)', 'font-size': 8, 'background-color': '#5b8def' } },
-        { selector: 'edge', style: { 'width': 1, 'line-color': '#bbb', 'target-arrow-shape': 'triangle', 'target-arrow-color': '#bbb', 'curve-style': 'bezier' } }
+        {
+          selector: 'node',
+          style: {
+            'label': 'data(label)',
+            'font-size': 9,
+            'color': '#1e293b',
+            'text-valign': 'bottom',
+            'text-margin-y': 4,
+            'background-color': 'data(color)',
+            'width': 18,
+            'height': 18
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 1.2,
+            'line-color': '#cbd5e1',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#94a3b8',
+            'curve-style': 'bezier',
+            'arrow-scale': 0.8
+          }
+        },
+        { selector: '.dim', style: { 'opacity': 0.18 } },
+        { selector: 'edge.hi', style: { 'line-color': '#4f46e5', 'target-arrow-color': '#4f46e5', 'width': 2 } }
       ],
-      layout: { name: 'cose' }
+      layout: { name: 'cose', animate: false, padding: 30, nodeRepulsion: 8000 }
     });
-    cy.on('tap', 'node', function (evt) {
+    const info = document.getElementById('hover-info');
+    cy.on('mouseover', 'node', evt => {
+      const n = evt.target;
+      const hood = n.closedNeighborhood();
+      cy.elements().addClass('dim');
+      hood.removeClass('dim');
+      n.connectedEdges().addClass('hi');
+      info.textContent = `${n.data('label')}  [${n.data('type')}]  (${n.id()})`;
+      info.style.display = 'block';
+    });
+    cy.on('mouseout', 'node', () => {
+      cy.elements().removeClass('dim hi');
+      info.style.display = 'none';
+    });
+    cy.on('tap', 'node', evt => {
       window.location = '/ui/concepts/' + evt.target.id();
     });
+    document.getElementById('btn-fit').onclick = () => cy.fit(undefined, 30);
+    document.getElementById('btn-layout').onclick = () =>
+      cy.layout({ name: 'cose', animate: true, padding: 30, nodeRepulsion: 8000 }).run();
   });
 </script>
 {% endblock %}
