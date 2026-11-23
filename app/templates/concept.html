@@ -37,6 +37,7 @@
     <code>{{ c.id }}</code>
     {% if c.bundle %}<span>bundle: <strong>{{ c.bundle }}</strong></span>{% endif %}
     {% if c.resource %}<a href="{{ c.resource }}" target="_blank" rel="noopener">Reference &nearr;</a>{% endif %}
+    {% if edit_url %}<a href="{{ edit_url }}" target="_blank" rel="noopener">Edit on GitHub &nearr;</a>{% endif %}
   </div>
   <h1>{{ c.title or c.id }}</h1>
   {% if c.description %}<p class="muted" style="margin:.25rem 0 0;">{{ c.description }}</p>{% endif %}

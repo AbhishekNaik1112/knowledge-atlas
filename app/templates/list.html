@@ -155,6 +155,10 @@
     <option value="updated" {% if selected_sort == 'updated' %}selected{% endif %}>Sort: Recently Updated</option>
     <option value="id" {% if selected_sort == 'id' %}selected{% endif %}>Sort: A–Z</option>
   </select>
+  <select class="filter-ctrl" name="bundle" aria-label="Repo" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
+    <option value="">All repos</option>
+    {% for b in bundles %}<option value="{{ b }}" {% if selected_bundle == b %}selected{% endif %}>{{ b }}</option>{% endfor %}
+  </select>
   <select class="filter-ctrl" name="folder" aria-label="Folder" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
     <option value="">All folders</option>
     {% for f in folders %}<option value="{{ f }}" {% if selected_folder == f %}selected{% endif %}>{{ f }}/</option>{% endfor %}

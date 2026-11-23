@@ -120,3 +120,27 @@ def test_ui_activity_page_renders(client):
     r = client.get("/ui/activity")
     assert r.status_code == 200
     assert "Sync Activity" in r.text
+
+
+def test_ui_filter_by_bundle_and_edit_on_github_link(db_session):
+    from fastapi.testclient import TestClient
+    from app.config import Settings, get_settings
+    from app.db import get_session
+    from app.main import create_app
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        embeddings_enabled=False,
+        github_repo_url="https://github.com/org/repo",
+        github_sync_subdir="docs",
+    )
+    with TestClient(app) as c:
+        _create(c, "a", bundle="repo-a", title="Alpha")
+        _create(c, "b", bundle="repo-b", title="Beta")
+        r = c.get("/ui/search", params={"bundle": "repo-a"})
+        assert "Alpha" in r.text and "Beta" not in r.text
+
+        detail = c.get("/ui/concepts/a")
+        assert "https://github.com/org/repo/blob/main/docs/a.md" in detail.text
+    app.dependency_overrides.clear()

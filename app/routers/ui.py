@@ -33,17 +33,20 @@ def ui_home(
     type: str = "",
     tag: str = "",
     folder: str = "",
+    bundle: str = "",
     concepts: SqlConceptRepository = Depends(get_concept_repo),
     syncs: SqlSyncEventRepository = Depends(get_sync_repo),
 ) -> HTMLResponse:
     items, _ = concepts.list(
         type=type or None,
         tags=[tag.lower()] if tag else None,
+        bundle=bundle or None,
         prefix=folder or None,
         sort=sort,
         limit=200,
     )
     types, tags, folders = concepts.distinct_facets()
+    bundles = concepts.distinct_bundles()
     return templates.TemplateResponse(
         request=request,
         name="list.html",
@@ -52,10 +55,12 @@ def ui_home(
             "types": types,
             "tags": tags,
             "folders": folders,
+            "bundles": bundles,
             "selected_sort": sort,
             "selected_type": type,
             "selected_tag": tag,
             "selected_folder": folder,
+            "selected_bundle": bundle,
             "latest_sync": syncs.latest(),
         },
     )
@@ -68,6 +73,7 @@ def ui_search(
     type: str = "",
     tag: str = "",
     folder: str = "",
+    bundle: str = "",
     sort: Literal["id", "updated"] = "updated",
     concepts: SqlConceptRepository = Depends(get_concept_repo),
     search: SqlSearchRepository = Depends(get_search_repo),
@@ -77,19 +83,26 @@ def ui_search(
     type_f = type or None
     tag_f = [tag.lower()] if tag else None
     prefix_f = folder or None
+    bundle_f = bundle or None
     rows: list[Concept] | list[SearchHit]
     if q.strip():
         if settings.embeddings_enabled:
             rows, _ = search.hybrid(
-                q, embedder.encode([q])[0], type=type_f, tags=tag_f, prefix=prefix_f, limit=50
+                q,
+                embedder.encode([q])[0],
+                type=type_f,
+                tags=tag_f,
+                prefix=prefix_f,
+                bundle=bundle_f,
+                limit=50,
             )
         else:
             rows, _ = search.search(
-                q, type=type_f, tags=tag_f, prefix=prefix_f, limit=50
+                q, type=type_f, tags=tag_f, prefix=prefix_f, bundle=bundle_f, limit=50
             )
     else:
         rows, _ = concepts.list(
-            type=type_f, tags=tag_f, prefix=prefix_f, sort=sort, limit=200
+            type=type_f, tags=tag_f, prefix=prefix_f, bundle=bundle_f, sort=sort, limit=200
         )
     return templates.TemplateResponse(
         request=request, name="concept_rows.html", context={"concepts": rows}
@@ -119,6 +132,7 @@ def ui_concept(
     concept_id: str,
     concepts: SqlConceptRepository = Depends(get_concept_repo),
     edges: SqlEdgeRepository = Depends(get_edge_repo),
+    settings: Settings = Depends(get_settings),
 ) -> HTMLResponse:
     obj = concepts.get(concept_id)
     if obj is None:
@@ -128,6 +142,16 @@ def ui_concept(
             context={"concept_id": concept_id},
             status_code=404,
         )
+    edit_url: str | None = None
+    if settings.github_repo_url:
+        branch = settings.github_sync_branch or "main"
+        subdir = (settings.github_sync_subdir or "").strip("/")
+        rel_id = concept_id
+        if settings.namespace_by_bundle and rel_id.startswith(f"{obj.bundle}/"):
+            rel_id = rel_id[len(obj.bundle) + 1 :]
+        rel_path = f"{subdir}/{rel_id}.md" if subdir else f"{rel_id}.md"
+        edit_url = f"{settings.github_repo_url.rstrip('/')}/blob/{branch}/{rel_path}"
+
     return templates.TemplateResponse(
         request=request,
         name="concept.html",
@@ -136,5 +160,6 @@ def ui_concept(
             "html": render_body_html(obj.body, concept_id),
             "outgoing": edges.outgoing(concept_id),
             "backlinks": edges.backlinks(concept_id),
+            "edit_url": edit_url,
         },
     )
