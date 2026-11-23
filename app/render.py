@@ -23,7 +23,7 @@ def render_body_html(body: str, source_id: str) -> str:
         for child in token.children:
             if child.type == "link_open":
                 href = child.attrGet("href")
-                target = resolve_target(source_id, href) if href else None
+                target = resolve_target(source_id, href) if isinstance(href, str) and href else None
                 if target is not None:
                     child.attrSet("href", f"/ui/concepts/{target}")
     return _md.renderer.render(tokens, _md.options, {})

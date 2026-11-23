@@ -69,8 +69,13 @@ def test_hybrid_combines_keyword_and_semantic(sem_client, tmp_path):
     assert "a" in ids and "b" in ids  # a via semantic, b via keyword
 
 
-def test_semantic_disabled_returns_400(client):
-    assert client.get("/search", params={"q": "x", "mode": "semantic"}).status_code == 400
+def test_semantic_disabled_returns_400(db_session):
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(embeddings_enabled=False)
+    with TestClient(app) as c:
+        assert c.get("/search", params={"q": "x", "mode": "semantic"}).status_code == 400
+    app.dependency_overrides.clear()
 
 
 def test_bad_mode_422(client):
@@ -81,3 +86,29 @@ def test_keyword_mode_still_default(sem_client, tmp_path):
     _ingest_two(sem_client, tmp_path, "bitcoin ledger", "banana bread")
     items = sem_client.get("/search", params={"q": "bitcoin"}).json()["items"]
     assert [i["id"] for i in items] == ["a"]
+
+
+def test_crud_create_and_update_compute_embeddings(sem_client, db_session):
+    r = sem_client.post(
+        "/concepts",
+        json={"id": "crud/car", "type": "Doc", "title": "Fast Vehicle", "body": "automobile"},
+    )
+    assert r.status_code == 201
+    hits = sem_client.get("/search", params={"q": "car", "mode": "semantic"}).json()["items"]
+    assert [h["id"] for h in hits] == ["crud/car"]
+
+    r2 = sem_client.put(
+        "/concepts/crud/car",
+        json={"type": "Doc", "title": "Bread", "body": "banana bread recipe"},
+    )
+    assert r2.status_code == 200
+    hits2 = sem_client.get("/search", params={"q": "bake", "mode": "semantic"}).json()["items"]
+    assert [h["id"] for h in hits2] == ["crud/car"]
+
+
+def test_semantic_and_hybrid_return_snippets(sem_client, tmp_path):
+    _ingest_two(sem_client, tmp_path, "the automobile is fast on highways", "banana bread recipe")
+    sem_hit = sem_client.get("/search", params={"q": "car", "mode": "semantic"}).json()["items"][0]
+    hyb_hit = sem_client.get("/search", params={"q": "automobile", "mode": "hybrid"}).json()["items"][0]
+    assert sem_hit["snippet"] is not None
+    assert hyb_hit["snippet"] is not None

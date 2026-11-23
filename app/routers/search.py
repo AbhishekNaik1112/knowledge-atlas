@@ -21,32 +21,39 @@ def search(
     mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
     type: str | None = Query(None),
     tags: list[str] = Query(default=[]),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int | None = Query(None, ge=1),
     offset: int = Query(0, ge=0),
     repo: SqlSearchRepository = Depends(get_search_repo),
     embedder: Embedder = Depends(get_embedder),
     settings: Settings = Depends(get_settings),
 ) -> Page[SearchHitOut]:
-    tag_filter = tags or None
+    effective_limit = settings.default_page_size if limit is None else limit
+    if effective_limit > settings.max_page_size:
+        raise HTTPException(
+            status_code=422, detail=f"limit must be <= {settings.max_page_size}"
+        )
+    tag_filter = [t.strip().lower() for t in tags if t.strip()] or None
 
     if mode == "keyword":
-        hits, total = repo.search(q, type=type, tags=tag_filter, limit=limit, offset=offset)
+        hits, total = repo.search(
+            q, type=type, tags=tag_filter, limit=effective_limit, offset=offset
+        )
     else:
         if not settings.embeddings_enabled:
             raise HTTPException(status_code=400, detail="semantic search is disabled")
         query_vec = embedder.encode([q])[0]
         if mode == "semantic":
             hits, total = repo.semantic(
-                query_vec, type=type, tags=tag_filter, limit=limit, offset=offset
+                query_vec, type=type, tags=tag_filter, limit=effective_limit, offset=offset
             )
         else:  # hybrid
             hits, total = repo.hybrid(
-                q, query_vec, type=type, tags=tag_filter, limit=limit, offset=offset
+                q, query_vec, type=type, tags=tag_filter, limit=effective_limit, offset=offset
             )
 
     return Page(
         items=[SearchHitOut.model_validate(h) for h in hits],
         total=total,
-        limit=limit,
+        limit=effective_limit,
         offset=offset,
     )

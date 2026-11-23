@@ -7,7 +7,9 @@ cheap and the rest of the app/tests never pull torch unless embeddings are actua
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol
+
+from app.config import get_settings
 
 EMBED_DIM = 384  # all-MiniLM-L6-v2
 
@@ -19,7 +21,7 @@ class Embedder(Protocol):
 class SentenceTransformerEmbedder:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
         self.model_name = model_name
-        self._model = None  # loaded on first use
+        self._model: Any = None  # loaded on first use
 
     def encode(self, texts: list[str]) -> list[list[float]]:
         if self._model is None:
@@ -31,10 +33,10 @@ class SentenceTransformerEmbedder:
 
 
 @lru_cache
-def _default_embedder() -> SentenceTransformerEmbedder:
-    return SentenceTransformerEmbedder()
+def _default_embedder(model_name: str) -> SentenceTransformerEmbedder:
+    return SentenceTransformerEmbedder(model_name=model_name)
 
 
 def get_embedder() -> Embedder:
     """FastAPI dependency. Cheap to construct (model loads lazily); overridable in tests."""
-    return _default_embedder()
+    return _default_embedder(get_settings().embedding_model)

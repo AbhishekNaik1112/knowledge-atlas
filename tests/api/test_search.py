@@ -37,3 +37,9 @@ def test_search_snippet_present(client):
     _create(client, "a", body="the bitcoin ledger records transactions")
     hit = client.get("/search", params={"q": "bitcoin"}).json()["items"][0]
     assert hit["snippet"] is not None
+
+
+def test_search_filter_tag_case_insensitive(client):
+    _create(client, "a", body="bitcoin", tags=["Crypto"])
+    data = client.get("/search", params={"q": "bitcoin", "tags": "CRYPTO"}).json()
+    assert [i["id"] for i in data["items"]] == ["a"] and data["total"] == 1

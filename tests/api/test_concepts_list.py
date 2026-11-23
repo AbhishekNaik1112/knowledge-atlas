@@ -44,3 +44,9 @@ def test_list_bad_pagination_422(client):
     assert client.get("/concepts", params={"limit": 0}).status_code == 422
     assert client.get("/concepts", params={"limit": 999}).status_code == 422
     assert client.get("/concepts", params={"offset": -1}).status_code == 422
+
+
+def test_list_filter_tags_case_insensitive(client):
+    _create(client, "a", tags=["PostgreSQL"])
+    data = client.get("/concepts", params={"tags": "POSTGRESQL"}).json()
+    assert [i["id"] for i in data["items"]] == ["a"] and data["total"] == 1
