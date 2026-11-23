@@ -97,3 +97,26 @@ def test_ui_body_external_links_preserved(client):
     client.post("/concepts", json={"id": "a", "type": "Doc", "body": "[docs](https://example.com)"})
     r = client.get("/ui/concepts/a")
     assert "https://example.com" in r.text
+
+
+def test_ui_filter_by_folder_type_tag_and_sort(client):
+    _create(client, "http/caching", type="technical-note", title="Caching", tags=["http"])
+    _create(client, "security/cors", type="security-note", title="CORS", tags=["browser"])
+
+    r_folder = client.get("/ui/search", params={"folder": "http"})
+    assert "Caching" in r_folder.text and "CORS" not in r_folder.text
+
+    r_type = client.get("/ui/search", params={"type": "security-note"})
+    assert "CORS" in r_type.text and "Caching" not in r_type.text
+
+    r_tag = client.get("/ui/search", params={"tag": "http"})
+    assert "Caching" in r_tag.text and "CORS" not in r_tag.text
+
+    r_sort = client.get("/ui", params={"sort": "updated"})
+    assert r_sort.status_code == 200 and "Caching" in r_sort.text
+
+
+def test_ui_activity_page_renders(client):
+    r = client.get("/ui/activity")
+    assert r.status_code == 200
+    assert "Sync Activity" in r.text

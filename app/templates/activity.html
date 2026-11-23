@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Sync Activity — Knowledge Atlas{% endblock %}
+{% block content %}
+<p class="crumb"><a href="/ui">&larr; Back to catalog</a></p>
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:1rem;">
+  <h1 style="margin:0;">Sync Activity</h1>
+  <small class="muted">Recent GitHub webhook syncs</small>
+</div>
+<div class="card" style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>Bundle</th>
+        <th>Commit</th>
+        <th>Pusher</th>
+        <th>Message</th>
+        <th>Changes (+ / ~ / -)</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for e in events %}
+      <tr>
+        <td><small>{{ e.synced_at.strftime('%Y-%m-%d %H:%M:%S') }}</small></td>
+        <td><strong>{{ e.bundle }}</strong></td>
+        <td><code>{{ (e.commit_sha or '-')[:7] }}</code></td>
+        <td>{{ e.pusher or '-' }}</td>
+        <td>{{ e.commit_message or '-' }}</td>
+        <td>+{{ e.created_count }} / ~{{ e.updated_count }} / -{{ e.deleted_count }}</td>
+        <td><span class="badge">{{ e.status }}</span></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted" style="text-align:center; padding:1.5rem;"><em>No sync events recorded yet.</em></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

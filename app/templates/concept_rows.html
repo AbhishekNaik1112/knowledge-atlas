@@ -17,6 +17,9 @@
         {% for t in c.tags[:4] %}<span class="tag">{{ t }}</span>{% endfor %}
       </div>
     {% endif %}
+    {% if c.updated_at is defined and c.updated_at %}
+      <small style="font-size:.76rem;">Updated {{ c.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+    {% endif %}
   </li>
 {% endfor %}
 </ul>

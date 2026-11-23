@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -10,10 +11,16 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import Settings, get_settings
 from app.db import Concept
-from app.dependencies import get_concept_repo, get_edge_repo, get_search_repo
+from app.dependencies import get_concept_repo, get_edge_repo, get_search_repo, get_sync_repo
 from app.embeddings import Embedder, get_embedder
 from app.render import render_body_html
-from app.repository import SearchHit, SqlConceptRepository, SqlEdgeRepository, SqlSearchRepository
+from app.repository import (
+    SearchHit,
+    SqlConceptRepository,
+    SqlEdgeRepository,
+    SqlSearchRepository,
+    SqlSyncEventRepository,
+)
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 router = APIRouter(tags=["ui"])
@@ -22,31 +29,82 @@ router = APIRouter(tags=["ui"])
 @router.get("/ui", response_class=HTMLResponse)
 def ui_home(
     request: Request,
+    sort: Literal["id", "updated"] = "updated",
+    type: str = "",
+    tag: str = "",
+    folder: str = "",
     concepts: SqlConceptRepository = Depends(get_concept_repo),
+    syncs: SqlSyncEventRepository = Depends(get_sync_repo),
 ) -> HTMLResponse:
-    items, _ = concepts.list(limit=200)
-    return templates.TemplateResponse(request=request, name="list.html", context={"concepts": items})
+    items, _ = concepts.list(
+        type=type or None,
+        tags=[tag.lower()] if tag else None,
+        prefix=folder or None,
+        sort=sort,
+        limit=200,
+    )
+    types, tags, folders = concepts.distinct_facets()
+    return templates.TemplateResponse(
+        request=request,
+        name="list.html",
+        context={
+            "concepts": items,
+            "types": types,
+            "tags": tags,
+            "folders": folders,
+            "selected_sort": sort,
+            "selected_type": type,
+            "selected_tag": tag,
+            "selected_folder": folder,
+            "latest_sync": syncs.latest(),
+        },
+    )
 
 
 @router.get("/ui/search", response_class=HTMLResponse)
 def ui_search(
     request: Request,
     q: str = "",
+    type: str = "",
+    tag: str = "",
+    folder: str = "",
+    sort: Literal["id", "updated"] = "updated",
     concepts: SqlConceptRepository = Depends(get_concept_repo),
     search: SqlSearchRepository = Depends(get_search_repo),
     settings: Settings = Depends(get_settings),
     embedder: Embedder = Depends(get_embedder),
 ) -> HTMLResponse:
+    type_f = type or None
+    tag_f = [tag.lower()] if tag else None
+    prefix_f = folder or None
     rows: list[Concept] | list[SearchHit]
     if q.strip():
         if settings.embeddings_enabled:
-            rows, _ = search.hybrid(q, embedder.encode([q])[0], limit=50)
+            rows, _ = search.hybrid(
+                q, embedder.encode([q])[0], type=type_f, tags=tag_f, prefix=prefix_f, limit=50
+            )
         else:
-            rows, _ = search.search(q, limit=50)
+            rows, _ = search.search(
+                q, type=type_f, tags=tag_f, prefix=prefix_f, limit=50
+            )
     else:
-        rows, _ = concepts.list(limit=200)
+        rows, _ = concepts.list(
+            type=type_f, tags=tag_f, prefix=prefix_f, sort=sort, limit=200
+        )
     return templates.TemplateResponse(
         request=request, name="concept_rows.html", context={"concepts": rows}
+    )
+
+
+@router.get("/ui/activity", response_class=HTMLResponse)
+def ui_activity(
+    request: Request,
+    syncs: SqlSyncEventRepository = Depends(get_sync_repo),
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request=request,
+        name="activity.html",
+        context={"events": syncs.list(limit=30)},
     )
 
 

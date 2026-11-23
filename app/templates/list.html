@@ -11,7 +11,35 @@
     margin-bottom: 1rem;
   }
   .hero h1 { margin: 0; font-size: 1.75rem; letter-spacing: -.02em; }
-  .search-wrap { position: relative; margin-bottom: 1.5rem; }
+  .search-wrap { position: relative; margin-bottom: .85rem; }
+  .sync-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    padding: .65rem 1rem;
+    margin-bottom: 1rem;
+    font-size: .86rem;
+    background: #f1f5f9;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .6rem;
+    margin-bottom: 1.25rem;
+    align-items: center;
+  }
+  .filter-bar select {
+    padding: .42rem .65rem;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: .86rem;
+  }
   input[type=search] {
     width: 100%;
     padding: .8rem 1rem .8rem 2.6rem;
@@ -102,11 +130,43 @@
   </div>
   <span class="badge">{{ concepts|length }} concepts</span>
 </div>
+<div class="sync-banner">
+  {% if latest_sync %}
+    <span>
+      <strong>Last GitHub sync:</strong>
+      <code>{{ (latest_sync.commit_sha or 'manual')[:7] }}</code>
+      {% if latest_sync.pusher %}by <strong>{{ latest_sync.pusher }}</strong>{% endif %}
+      &middot; {{ latest_sync.synced_at.strftime('%Y-%m-%d %H:%M UTC') }}
+      &middot; +{{ latest_sync.created_count }} / ~{{ latest_sync.updated_count }} / -{{ latest_sync.deleted_count }}
+    </span>
+  {% else %}
+    <span class="muted">No GitHub webhook syncs recorded yet.</span>
+  {% endif %}
+  <a href="/ui/activity">View sync activity &rarr;</a>
+</div>
 <div class="search-wrap">
   <span class="search-icon">&#128269;</span>
-  <input type="search" name="q" placeholder="Search concepts by keyword or meaning (e.g. 'preventing SQL concatenation' or 'ETag')…"
-         hx-get="/ui/search" hx-trigger="input changed delay:300ms, search" hx-target="#results" hx-indicator="#search-spinner">
+  <input class="filter-ctrl" type="search" name="q" placeholder="Search concepts by keyword or meaning (e.g. 'preventing SQL concatenation' or 'ETag')…"
+         hx-get="/ui/search" hx-trigger="input changed delay:300ms, search" hx-target="#results" hx-include=".filter-ctrl" hx-indicator="#search-spinner">
   <span id="search-spinner" class="htmx-indicator">Searching…</span>
+</div>
+<div class="filter-bar">
+  <select class="filter-ctrl" name="sort" aria-label="Sort" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
+    <option value="updated" {% if selected_sort == 'updated' %}selected{% endif %}>Sort: Recently Updated</option>
+    <option value="id" {% if selected_sort == 'id' %}selected{% endif %}>Sort: A–Z</option>
+  </select>
+  <select class="filter-ctrl" name="folder" aria-label="Folder" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
+    <option value="">All folders</option>
+    {% for f in folders %}<option value="{{ f }}" {% if selected_folder == f %}selected{% endif %}>{{ f }}/</option>{% endfor %}
+  </select>
+  <select class="filter-ctrl" name="type" aria-label="Type" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
+    <option value="">All types</option>
+    {% for tp in types %}<option value="{{ tp }}" {% if selected_type == tp %}selected{% endif %}>{{ tp }}</option>{% endfor %}
+  </select>
+  <select class="filter-ctrl" name="tag" aria-label="Tag" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
+    <option value="">All tags</option>
+    {% for tg in tags %}<option value="{{ tg }}" {% if selected_tag == tg %}selected{% endif %}>#{{ tg }}</option>{% endfor %}
+  </select>
 </div>
 <div id="results">{% include "concept_rows.html" %}</div>
 {% endblock %}
