@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -30,10 +30,12 @@ class ConceptCreate(ConceptBase):
     id: str = Field(min_length=1)
     bundle: str = "default"
     body: str = ""
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConceptUpdate(ConceptBase):
     body: str = ""
+    extra: dict[str, Any] | None = None
 
 
 class ConceptOut(ConceptBase):
@@ -42,6 +44,7 @@ class ConceptOut(ConceptBase):
     id: str
     bundle: str
     body: str
+    extra: dict[str, Any] = Field(default_factory=dict, validation_alias="frontmatter")
     html: str | None = None
     created_at: dt.datetime
     updated_at: dt.datetime

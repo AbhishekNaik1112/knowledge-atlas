@@ -4,10 +4,11 @@ so a different backend (e.g. Postgres->another store) can be swapped behind the 
 
 from __future__ import annotations
 
+import builtins
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db import Concept, Edge
@@ -114,7 +115,7 @@ class SqlConceptRepository:
         items = list(self.s.execute(list_stmt).scalars())
         return items, total
 
-    def set_embedding(self, concept_id: str, vector: list[float]) -> None:
+    def set_embedding(self, concept_id: str, vector: builtins.list[float]) -> None:
         obj = self.s.get(Concept, concept_id)
         if obj is not None:
             obj.embedding = vector
@@ -165,6 +166,11 @@ class SqlEdgeRepository:
             )
         self.s.flush()
 
+    def mark_resolved_for_target(self, target_id: str, resolved: bool) -> None:
+        """Update `resolved` on all incoming edges pointing to target_id."""
+        self.s.execute(update(Edge).where(Edge.target_id == target_id).values(resolved=resolved))
+        self.s.flush()
+
     def outgoing(self, source_id: str) -> list[Edge]:
         stmt = select(Edge).where(Edge.source_id == source_id).order_by(Edge.target_id)
         return list(self.s.execute(stmt).scalars())
@@ -188,6 +194,15 @@ class SearchHit:
 
 
 _HEADLINE_OPTS = "StartSel=<mark>, StopSel=</mark>, MaxWords=25, MinWords=8, ShortWord=3"
+
+
+def _excerpt(description: str | None, body: str | None, max_len: int = 160) -> str | None:
+    text = (description or body or "").strip()
+    if not text:
+        return None
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1].rstrip() + "…"
 
 
 class SqlSearchRepository:
@@ -273,6 +288,7 @@ class SqlSearchRepository:
                 Concept.type,
                 Concept.title,
                 Concept.description,
+                Concept.body,
                 distance.label("distance"),
             )
             .where(where)
@@ -287,7 +303,7 @@ class SqlSearchRepository:
                 title=r.title,
                 description=r.description,
                 score=1.0 - float(r.distance),  # cosine similarity
-                snippet=None,
+                snippet=_excerpt(r.description, r.body),
             )
             for r in rows
         ]
@@ -341,6 +357,15 @@ class SqlSearchRepository:
             c.id: c
             for c in self.s.execute(select(Concept).where(Concept.id.in_(page))).scalars()
         }
+        kw_page_ids = [cid for cid in page if cid in keyword_ids]
+        kw_snippets: dict[str, str] = {}
+        if kw_page_ids:
+            headline_expr = func.ts_headline("english", Concept.body, tsquery, _HEADLINE_OPTS)
+            for cid, snip in self.s.execute(
+                select(Concept.id, headline_expr).where(Concept.id.in_(kw_page_ids))
+            ):
+                if snip:
+                    kw_snippets[cid] = snip
         hits = [
             SearchHit(
                 id=cid,
@@ -348,7 +373,7 @@ class SqlSearchRepository:
                 title=rows[cid].title,
                 description=rows[cid].description,
                 score=scores[cid],
-                snippet=None,
+                snippet=kw_snippets.get(cid) or _excerpt(rows[cid].description, rows[cid].body),
             )
             for cid in page
             if cid in rows

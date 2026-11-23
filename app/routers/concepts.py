@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from app.config import Settings, get_settings
 from app.dependencies import get_concept_repo, get_concept_service, get_edge_repo
 from app.errors import NotFoundError
 from app.models import (
@@ -30,7 +31,14 @@ def _to_out(obj, *, render: bool = False) -> ConceptOut:
     return out
 
 
-def _to_input(concept_id: str, bundle: str, payload: ConceptCreate | ConceptUpdate) -> ConceptInput:
+def _to_input(
+    concept_id: str,
+    bundle: str,
+    payload: ConceptCreate | ConceptUpdate,
+    *,
+    existing_frontmatter: dict | None = None,
+) -> ConceptInput:
+    fm = payload.extra if payload.extra is not None else (existing_frontmatter or {})
     return ConceptInput(
         id=concept_id,
         type=payload.type,
@@ -41,6 +49,7 @@ def _to_input(concept_id: str, bundle: str, payload: ConceptCreate | ConceptUpda
         timestamp=payload.timestamp,
         tags=payload.tags,
         body=payload.body,
+        frontmatter=fm,
     )
 
 
@@ -64,15 +73,24 @@ def create_concept(
 def list_concepts(
     type: str | None = Query(None),
     tags: list[str] = Query(default=[]),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int | None = Query(None, ge=1),
     offset: int = Query(0, ge=0),
     svc: ConceptService = Depends(get_concept_service),
+    settings: Settings = Depends(get_settings),
 ) -> Page[ConceptListItem]:
-    items, total = svc.list(type=type, tags=tags or None, limit=limit, offset=offset)
+    effective_limit = settings.default_page_size if limit is None else limit
+    if effective_limit > settings.max_page_size:
+        raise HTTPException(
+            status_code=422, detail=f"limit must be <= {settings.max_page_size}"
+        )
+    normalized_tags = [t.strip().lower() for t in tags if t.strip()] or None
+    items, total = svc.list(
+        type=type, tags=normalized_tags, limit=effective_limit, offset=offset
+    )
     return Page(
         items=[ConceptListItem.model_validate(o) for o in items],
         total=total,
-        limit=limit,
+        limit=effective_limit,
         offset=offset,
     )
 
@@ -122,7 +140,10 @@ def update_concept(
     existing = svc.get(concept_id)
     if existing is None:
         raise NotFoundError(f"concept {concept_id!r} not found")
-    obj = svc.update(concept_id, _to_input(concept_id, existing.bundle, payload))
+    obj = svc.update(
+        concept_id,
+        _to_input(concept_id, existing.bundle, payload, existing_frontmatter=existing.frontmatter),
+    )
     return _to_out(obj)
 
 

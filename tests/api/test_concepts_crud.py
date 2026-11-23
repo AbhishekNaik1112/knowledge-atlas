@@ -75,3 +75,34 @@ def test_delete_204(client):
 
 def test_delete_missing_404(client):
     assert client.delete("/concepts/ghost").status_code == 404
+
+
+def test_create_and_delete_sync_incoming_edge_resolved(client):
+    client.post("/concepts", json={"id": "src", "type": "Doc", "body": "see [tgt](tgt.md)"})
+    links1 = client.get("/concepts/src/links").json()
+    assert links1["outgoing"][0]["resolved"] is False
+
+    client.post("/concepts", json={"id": "tgt", "type": "Doc", "body": "target"})
+    links2 = client.get("/concepts/src/links").json()
+    assert links2["outgoing"][0]["resolved"] is True
+
+    client.delete("/concepts/tgt")
+    links3 = client.get("/concepts/src/links").json()
+    assert links3["outgoing"][0]["resolved"] is False
+
+
+def test_extra_frontmatter_roundtrip_and_put_preserves(client):
+    r = client.post(
+        "/concepts",
+        json={"id": "fm", "type": "Doc", "extra": {"owner": "alice", "tier": 1}},
+    )
+    assert r.status_code == 201
+    assert r.json()["extra"] == {"owner": "alice", "tier": 1}
+
+    fetched = client.get("/concepts/fm").json()
+    assert fetched["extra"] == {"owner": "alice", "tier": 1}
+
+    # PUT without extra preserves existing frontmatter
+    upd = client.put("/concepts/fm", json={"type": "Doc", "title": "Updated", "body": "new"})
+    assert upd.status_code == 200
+    assert upd.json()["extra"] == {"owner": "alice", "tier": 1}

@@ -9,6 +9,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.db import Concept
+from app.embeddings import Embedder
 from app.links import resolved_links
 from app.repository import (
     ConceptInput,
@@ -24,10 +25,12 @@ class ConceptService:
         concepts: SqlConceptRepository,
         edges: SqlEdgeRepository,
         session: Session,
+        embedder: Embedder | None = None,
     ) -> None:
         self.concepts = concepts
         self.edges = edges
         self.session = session
+        self.embedder = embedder
 
     def get(self, concept_id: str) -> Concept | None:
         return self.concepts.get(concept_id)
@@ -38,18 +41,30 @@ class ConceptService:
     def create(self, data: ConceptInput) -> Concept:
         obj = self.concepts.create(data)
         self._sync_edges(obj.id, obj.body)
+        self.edges.mark_resolved_for_target(obj.id, True)
+        self._sync_embedding(obj)
         self.session.commit()
         return obj
 
     def update(self, concept_id: str, data: ConceptInput) -> Concept:
         obj = self.concepts.update(concept_id, data)
         self._sync_edges(concept_id, obj.body)
+        self._sync_embedding(obj)
         self.session.commit()
         return obj
 
     def delete(self, concept_id: str) -> None:
         self.concepts.delete(concept_id)
+        self.edges.mark_resolved_for_target(concept_id, False)
         self.session.commit()
+
+    def _sync_embedding(self, obj: Concept) -> None:
+        if self.embedder is None:
+            return
+        text = " ".join(x for x in (obj.title, obj.description, obj.body) if x)
+        if text:
+            vector = self.embedder.encode([text])[0]
+            self.concepts.set_embedding(obj.id, list(vector))
 
     def _sync_edges(self, source_id: str, body: str) -> None:
         edges = [

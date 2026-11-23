@@ -74,3 +74,39 @@ def test_webhook_missing_signature_401(webhook_client):
     client, spy = webhook_client
     r = client.post("/webhooks/github", content=b"{}")
     assert r.status_code == 401 and spy.calls == []
+
+
+def test_webhook_bad_json_400(webhook_client):
+    client, spy = webhook_client
+    body = b"{not-json"
+    r = client.post("/webhooks/github", content=body, headers={"X-Hub-Signature-256": _sig(body)})
+    assert r.status_code == 400 and spy.calls == []
+
+
+def test_repo_syncer_clones_and_ingests_real_git_repo(db_session, tmp_path, monkeypatch):
+    import subprocess
+    from app.db import Concept
+    from app.webhook import RepoSyncer
+    from tests.api.test_semantic import FakeEmbedder
+
+    work = tmp_path / "work"
+    bare = tmp_path / "remote.git"
+    work.mkdir()
+    subprocess.run(["git", "init", str(work)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "Test"], check=True)
+    (work / "note.md").write_text("---\ntype: Doc\ntitle: Fast Car\n---\nautomobile", encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
+
+    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    syncer = RepoSyncer(embedder=FakeEmbedder())
+    syncer.sync({"repository": {"clone_url": str(bare), "name": "git-bundle"}})
+
+    obj = db_session.get(Concept, "note")
+    assert obj is not None
+    assert obj.bundle == "git-bundle"
+    assert obj.embedding is not None
+    db_session.delete(obj)
+    db_session.commit()

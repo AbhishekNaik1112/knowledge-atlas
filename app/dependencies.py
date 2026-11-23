@@ -33,8 +33,12 @@ def get_concept_service(
     session: Session = Depends(get_session),
     concepts: SqlConceptRepository = Depends(get_concept_repo),
     edges: SqlEdgeRepository = Depends(get_edge_repo),
+    settings: Settings = Depends(get_settings),
+    embedder: Embedder = Depends(get_embedder),
 ) -> ConceptService:
-    return ConceptService(concepts, edges, session)
+    return ConceptService(
+        concepts, edges, session, embedder=embedder if settings.embeddings_enabled else None
+    )
 
 
 def get_ingest_service(
@@ -49,5 +53,8 @@ def get_ingest_service(
     )
 
 
-def get_repo_syncer() -> RepoSyncer:
-    return RepoSyncer()
+def get_repo_syncer(
+    settings: Settings = Depends(get_settings),
+    embedder: Embedder = Depends(get_embedder),
+) -> RepoSyncer:
+    return RepoSyncer(embedder=embedder if settings.embeddings_enabled else None)

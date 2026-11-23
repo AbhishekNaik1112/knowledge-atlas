@@ -14,6 +14,7 @@ import tempfile
 from sqlalchemy.orm import Session
 
 from app.db import make_engine
+from app.embeddings import Embedder
 from app.ingest import IngestService
 from app.repository import SqlConceptRepository, SqlEdgeRepository
 
@@ -27,6 +28,9 @@ def verify_signature(secret: str, body: bytes, signature_header: str | None) -> 
 
 class RepoSyncer:
     """Clone the pushed repo (shallow) and ingest it. Runs in a background task, own DB session."""
+
+    def __init__(self, embedder: Embedder | None = None) -> None:
+        self.embedder = embedder
 
     def sync(self, payload: dict) -> None:
         repo = payload.get("repository", {})
@@ -42,6 +46,9 @@ class RepoSyncer:
             )
             with Session(make_engine()) as session:
                 service = IngestService(
-                    SqlConceptRepository(session), SqlEdgeRepository(session), session
+                    SqlConceptRepository(session),
+                    SqlEdgeRepository(session),
+                    session,
+                    embedder=self.embedder,
                 )
                 service.ingest_dir(tmp, bundle=name)
