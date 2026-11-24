@@ -119,10 +119,18 @@ def make_engine(url: str | None = None) -> Engine:
 
 
 def init_db(engine: Engine) -> None:
-    """Ensure the pgvector extension exists, then materialize all tables."""
+    """Ensure the pgvector extension exists, materialize tables, and add new columns."""
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE sync_events "
+                "ADD COLUMN IF NOT EXISTS embedded_count INTEGER NOT NULL DEFAULT 0, "
+                "ADD COLUMN IF NOT EXISTS embed_status TEXT NOT NULL DEFAULT 'skipped'"
+            )
+        )
 
 
 _engine: Engine | None = None
