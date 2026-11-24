@@ -225,3 +225,46 @@ def test_repo_syncer_records_embed_status_ok_skipped_and_error(db_session, tmp_p
     if (obj := db_session.get(Concept, "note")) is not None:
         db_session.delete(obj)
     db_session.commit()
+
+
+def test_repo_syncer_sets_in_progress_before_embedding(db_session, tmp_path, monkeypatch):
+    import subprocess
+    from sqlalchemy.orm import Session
+    from app.db import Concept, SyncEvent
+    from app.webhook import RepoSyncer
+
+    seen_statuses: list[str] = []
+
+    class _SpyEmbedder:
+        def encode(self, texts: list[str]) -> list[list[float]]:
+            with Session(db_session.get_bind()) as check_sess:
+                ev = check_sess.query(SyncEvent).order_by(SyncEvent.id.desc()).first()
+                if ev is not None:
+                    seen_statuses.append(ev.embed_status)
+            return [[0.0] * 384 for _ in texts]
+
+    work = tmp_path / "work"
+    bare = tmp_path / "remote.git"
+    work.mkdir()
+    subprocess.run(["git", "init", str(work)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "Test"], check=True)
+    (work / "note.md").write_text("---\ntype: Doc\ntitle: Note\n---\nbody", encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
+
+    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    RepoSyncer(embedder=_SpyEmbedder()).sync(
+        {"repository": {"clone_url": str(bare), "name": "progress-test"}}
+    )
+
+    assert seen_statuses == ["in_progress"]
+    db_session.expire_all()
+    ev = db_session.query(SyncEvent).order_by(SyncEvent.id.desc()).first()
+    assert ev is not None and ev.embed_status == "ok" and ev.embedded_count == 1
+
+    db_session.query(SyncEvent).delete()
+    if (obj := db_session.get(Concept, "note")) is not None:
+        db_session.delete(obj)
+    db_session.commit()

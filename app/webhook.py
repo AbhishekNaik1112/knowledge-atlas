@@ -92,24 +92,55 @@ class RepoSyncer:
                         session,
                         embedder=self.embedder,
                     )
+                    sync_repo = SqlSyncEventRepository(session)
+                    sync_event = None
+
+                    def _mark_in_progress(embeddable_count: int) -> None:
+                        nonlocal sync_event
+                        if self.embedder is not None and embeddable_count > 0:
+                            sync_event = sync_repo.record(
+                                bundle=name,
+                                source="webhook",
+                                commit_sha=commit_sha,
+                                commit_message=commit_message,
+                                pusher=pusher,
+                                ref=ref,
+                                embed_status="in_progress",
+                            )
+                            session.commit()
+
                     res = service.ingest_dir(
-                        str(target_dir), bundle=name, prune=True, namespace_ids=namespace_ids
-                    )
-                    SqlSyncEventRepository(session).record(
+                        str(target_dir),
                         bundle=name,
-                        source="webhook",
-                        commit_sha=commit_sha,
-                        commit_message=commit_message,
-                        pusher=pusher,
-                        ref=ref,
-                        created_count=res.created,
-                        updated_count=res.updated,
-                        deleted_count=res.deleted,
-                        error_count=len(res.errors),
-                        status="ok" if not res.errors else "partial",
-                        embedded_count=res.embedded_count,
-                        embed_status=res.embed_status,
+                        prune=True,
+                        namespace_ids=namespace_ids,
+                        on_before_embed=_mark_in_progress,
                     )
+                    final_status = "ok" if not res.errors else "partial"
+                    if sync_event is None:
+                        sync_repo.record(
+                            bundle=name,
+                            source="webhook",
+                            commit_sha=commit_sha,
+                            commit_message=commit_message,
+                            pusher=pusher,
+                            ref=ref,
+                            created_count=res.created,
+                            updated_count=res.updated,
+                            deleted_count=res.deleted,
+                            error_count=len(res.errors),
+                            status=final_status,
+                            embedded_count=res.embedded_count,
+                            embed_status=res.embed_status,
+                        )
+                    else:
+                        sync_event.created_count = res.created
+                        sync_event.updated_count = res.updated
+                        sync_event.deleted_count = res.deleted
+                        sync_event.error_count = len(res.errors)
+                        sync_event.status = final_status
+                        sync_event.embedded_count = res.embedded_count
+                        sync_event.embed_status = res.embed_status
                     session.commit()
             except Exception as exc:
                 with Session(make_engine()) as session:

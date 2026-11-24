@@ -8,6 +8,7 @@ target is 'resolved' only once its concept exists).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import replace
 
 from sqlalchemy.orm import Session
@@ -47,11 +48,18 @@ class IngestService:
         *,
         prune: bool = False,
         namespace_ids: bool = False,
+        on_before_embed: Callable[[int], None] | None = None,
     ) -> IngestResult:
         # NOTE: reads an arbitrary server-side path (local/self-host tool). Guard behind auth
         # before exposing publicly (Phase C).
         name, entries = read_dir(dir_path)
-        return self._ingest(entries, bundle or name, prune=prune, namespace_ids=namespace_ids)
+        return self._ingest(
+            entries,
+            bundle or name,
+            prune=prune,
+            namespace_ids=namespace_ids,
+            on_before_embed=on_before_embed,
+        )
 
     def ingest_zip(
         self,
@@ -70,6 +78,7 @@ class IngestService:
         *,
         prune: bool = False,
         namespace_ids: bool = False,
+        on_before_embed: Callable[[int], None] | None = None,
     ) -> IngestResult:
         created = updated = skipped = deleted = 0
         errors: list[IngestError] = []
@@ -121,6 +130,9 @@ class IngestService:
                 for target, anchor in resolved_links(concept_id, body)
             ]
             self.edges.replace_for_source(concept_id, edges)
+
+        if on_before_embed is not None:
+            on_before_embed(len(embed_sources))
 
         embedded_count, embed_status = self._embed_concepts(embed_sources)
 

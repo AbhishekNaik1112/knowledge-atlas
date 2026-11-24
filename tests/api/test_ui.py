@@ -152,7 +152,8 @@ def test_ui_activity_and_home_show_embed_status(client, db_session):
     db_session.add_all([
         SyncEvent(bundle="r1", status="ok", embed_status="skipped", embedded_count=0),
         SyncEvent(bundle="r2", status="ok", embed_status="error", embedded_count=0),
-        SyncEvent(bundle="r3", status="ok", embed_status="ok", embedded_count=5),
+        SyncEvent(bundle="r3", status="ok", embed_status="in_progress", embedded_count=0),
+        SyncEvent(bundle="r4", status="ok", embed_status="ok", embedded_count=5),
     ])
     db_session.flush()
 
@@ -160,6 +161,7 @@ def test_ui_activity_and_home_show_embed_status(client, db_session):
     assert activity.status_code == 200
     assert "Embeds" in activity.text
     assert "ok (5)" in activity.text
+    assert "in progress" in activity.text
     assert "skipped" in activity.text
     assert "error" in activity.text
 
