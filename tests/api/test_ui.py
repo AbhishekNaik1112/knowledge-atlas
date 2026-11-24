@@ -144,3 +144,25 @@ def test_ui_filter_by_bundle_and_edit_on_github_link(db_session):
         detail = c.get("/ui/concepts/a")
         assert "https://github.com/org/repo/blob/main/docs/a.md" in detail.text
     app.dependency_overrides.clear()
+
+
+def test_ui_activity_and_home_show_embed_status(client, db_session):
+    from app.db import SyncEvent
+
+    db_session.add_all([
+        SyncEvent(bundle="r1", status="ok", embed_status="skipped", embedded_count=0),
+        SyncEvent(bundle="r2", status="ok", embed_status="error", embedded_count=0),
+        SyncEvent(bundle="r3", status="ok", embed_status="ok", embedded_count=5),
+    ])
+    db_session.flush()
+
+    activity = client.get("/ui/activity")
+    assert activity.status_code == 200
+    assert "Embeds" in activity.text
+    assert "ok (5)" in activity.text
+    assert "skipped" in activity.text
+    assert "error" in activity.text
+
+    home = client.get("/ui")
+    assert home.status_code == 200
+    assert "ok (5)" in home.text

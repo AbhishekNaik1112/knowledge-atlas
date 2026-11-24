@@ -107,6 +107,8 @@ class SyncEvent(Base):
     deleted_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     error_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="ok")
+    embedded_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    embed_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="skipped")
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

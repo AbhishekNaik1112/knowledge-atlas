@@ -134,6 +134,8 @@ class IngestResult(BaseModel):
     updated: int
     skipped: int
     deleted: int = 0
+    embedded_count: int = 0
+    embed_status: str = "skipped"
     errors: list[IngestError] = []
 
 
@@ -152,4 +154,6 @@ class SyncEventOut(BaseModel):
     deleted_count: int
     error_count: int
     status: str
+    embedded_count: int
+    embed_status: str
     synced_at: dt.datetime

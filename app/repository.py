@@ -465,6 +465,8 @@ class SqlSyncEventRepository:
         deleted_count: int = 0,
         error_count: int = 0,
         status: str = "ok",
+        embedded_count: int = 0,
+        embed_status: str = "skipped",
     ) -> SyncEvent:
         ev = SyncEvent(
             bundle=bundle,
@@ -478,6 +480,8 @@ class SqlSyncEventRepository:
             deleted_count=deleted_count,
             error_count=error_count,
             status=status,
+            embedded_count=embedded_count,
+            embed_status=embed_status,
         )
         self.s.add(ev)
         self.s.flush()

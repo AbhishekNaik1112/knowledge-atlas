@@ -138,6 +138,7 @@
       {% if latest_sync.pusher %}by <strong>{{ latest_sync.pusher }}</strong>{% endif %}
       &middot; {{ latest_sync.synced_at.strftime('%Y-%m-%d %H:%M UTC') }}
       &middot; +{{ latest_sync.created_count }} / ~{{ latest_sync.updated_count }} / -{{ latest_sync.deleted_count }}
+      &middot; Embeds: {% with sync_event=latest_sync %}{% include "_embed_badge.html" %}{% endwith %}
     </span>
   {% else %}
     <span class="muted">No GitHub webhook syncs recorded yet.</span>

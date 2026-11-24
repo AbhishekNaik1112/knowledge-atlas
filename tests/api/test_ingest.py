@@ -118,3 +118,93 @@ def test_ingest_namespace_ids_prevents_multi_repo_collision(client, tmp_path):
     links = client.get("/concepts/repo_a/auth/links").json()
     assert links["outgoing"][0]["target_id"] == "repo_b/auth"
     assert links["outgoing"][0]["resolved"] is True
+
+
+class _FailingEmbedder:
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("429 rate limit exceeded")
+
+
+def _make_zip(src: Path) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for p in src.rglob("*.md"):
+            zf.write(p, p.relative_to(src).as_posix())
+    return buf.getvalue()
+
+
+def _make_client(db_session, *, embeddings_enabled: bool, embedder=None):
+    from fastapi.testclient import TestClient
+    from app.config import Settings, get_settings
+    from app.db import get_session
+    from app.embeddings import get_embedder
+    from app.main import create_app
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        embeddings_enabled=embeddings_enabled
+    )
+    if embedder is not None:
+        app.dependency_overrides[get_embedder] = embedder
+    return app
+
+
+def test_ingest_reports_embed_status_skipped_when_disabled(db_session):
+    from fastapi.testclient import TestClient
+
+    app = _make_client(db_session, embeddings_enabled=False)
+    with TestClient(app) as c:
+        body = c.post("/ingest", params={"path": str(FIXTURE)}).json()
+        assert body["embed_status"] == "skipped"
+        assert body["embedded_count"] == 0
+    app.dependency_overrides.clear()
+
+
+def test_ingest_reports_embed_status_ok_for_dir_and_zip(db_session):
+    from fastapi.testclient import TestClient
+    from tests.api.test_semantic import FakeEmbedder
+
+    app = _make_client(db_session, embeddings_enabled=True, embedder=FakeEmbedder)
+    with TestClient(app) as c:
+        dir_body = c.post("/ingest", params={"path": str(FIXTURE)}).json()
+        assert dir_body["embed_status"] == "ok"
+        assert dir_body["embedded_count"] == 3
+
+        zip_body = c.post(
+            "/ingest",
+            params={"bundle": "crypto_bitcoin"},
+            files={"file": ("bundle.zip", _make_zip(FIXTURE), "application/zip")},
+        ).json()
+        assert zip_body["embed_status"] == "ok"
+        assert zip_body["embedded_count"] == 3
+    app.dependency_overrides.clear()
+
+
+def test_ingest_embed_failure_is_nonfatal(db_session):
+    from fastapi.testclient import TestClient
+
+    app = _make_client(db_session, embeddings_enabled=True, embedder=_FailingEmbedder)
+    with TestClient(app) as c:
+        r = c.post("/ingest", params={"path": str(FIXTURE)})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["created"] == 3
+        assert body["embed_status"] == "error"
+        assert body["embedded_count"] == 0
+        assert c.get("/concepts").json()["total"] == 3
+    app.dependency_overrides.clear()
+
+
+def test_ingest_zero_embeddable_docs_is_ok(db_session, tmp_path):
+    from fastapi.testclient import TestClient
+    from tests.api.test_semantic import FakeEmbedder
+
+    (tmp_path / "index.md").write_text("# Structural only", encoding="utf-8")
+    app = _make_client(db_session, embeddings_enabled=True, embedder=FakeEmbedder)
+    with TestClient(app) as c:
+        body = c.post("/ingest", params={"path": str(tmp_path)}).json()
+        assert body["created"] == 0
+        assert body["embed_status"] == "ok"
+        assert body["embedded_count"] == 0
+    app.dependency_overrides.clear()

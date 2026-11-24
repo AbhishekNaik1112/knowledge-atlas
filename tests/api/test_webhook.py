@@ -179,3 +179,49 @@ def test_repo_syncer_prunes_deleted_and_records_sync_event(db_session, tmp_path,
     if (obj := db_session.get(Concept, "a")) is not None:
         db_session.delete(obj)
     db_session.commit()
+
+
+def test_repo_syncer_records_embed_status_ok_skipped_and_error(db_session, tmp_path, monkeypatch, client):
+    import subprocess
+    from app.db import Concept, SyncEvent
+    from app.webhook import RepoSyncer
+    from tests.api.test_semantic import FakeEmbedder
+
+    class _FailingEmbedder:
+        def encode(self, texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("429 rate limit")
+
+    work = tmp_path / "work"
+    bare = tmp_path / "remote.git"
+    work.mkdir()
+    subprocess.run(["git", "init", str(work)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.email", "t@example.com"], check=True)
+    subprocess.run(["git", "-C", str(work), "config", "user.name", "Test"], check=True)
+    (work / "note.md").write_text("---\ntype: Doc\ntitle: Note\n---\nbody", encoding="utf-8")
+    subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
+
+    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    payload = {"repository": {"clone_url": str(bare), "name": "embed-test"}}
+
+    RepoSyncer(embedder=FakeEmbedder()).sync(payload)
+    RepoSyncer(embedder=None).sync(payload)
+    RepoSyncer(embedder=_FailingEmbedder()).sync(payload)
+
+    db_session.expire_all()
+    assert db_session.get(Concept, "note") is not None
+
+    syncs = client.get("/syncs").json()
+    assert syncs[0]["status"] == "ok"
+    assert syncs[0]["embed_status"] == "error"
+    assert syncs[0]["embedded_count"] == 0
+    assert syncs[1]["embed_status"] == "skipped"
+    assert syncs[1]["embedded_count"] == 0
+    assert syncs[2]["embed_status"] == "ok"
+    assert syncs[2]["embedded_count"] == 1
+
+    db_session.query(SyncEvent).delete()
+    if (obj := db_session.get(Concept, "note")) is not None:
+        db_session.delete(obj)
+    db_session.commit()

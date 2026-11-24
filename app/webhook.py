@@ -107,6 +107,8 @@ class RepoSyncer:
                         deleted_count=res.deleted,
                         error_count=len(res.errors),
                         status="ok" if not res.errors else "partial",
+                        embedded_count=res.embedded_count,
+                        embed_status=res.embed_status,
                     )
                     session.commit()
             except Exception as exc:

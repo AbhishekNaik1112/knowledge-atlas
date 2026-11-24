@@ -7,9 +7,12 @@ target is 'resolved' only once its concept exists).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.bundle import BundleEntry, read_dir, read_zip
 from app.embeddings import Embedder
@@ -119,11 +122,7 @@ class IngestService:
             ]
             self.edges.replace_for_source(concept_id, edges)
 
-        if self.embedder is not None and embed_sources:
-            ids = list(embed_sources)
-            vectors = self.embedder.encode([embed_sources[i] for i in ids])
-            for concept_id, vector in zip(ids, vectors):
-                self.concepts.set_embedding(concept_id, list(vector))
+        embedded_count, embed_status = self._embed_concepts(embed_sources)
 
         self.session.commit()
         return IngestResult(
@@ -132,5 +131,23 @@ class IngestService:
             updated=updated,
             skipped=skipped,
             deleted=deleted,
+            embedded_count=embedded_count,
+            embed_status=embed_status,
             errors=errors,
         )
+
+    def _embed_concepts(self, embed_sources: dict[str, str]) -> tuple[int, str]:
+        """Encode and store embeddings, returning (count, status) without failing DB sync."""
+        if self.embedder is None:
+            return 0, "skipped"
+        if not embed_sources:
+            return 0, "ok"
+        ids = list(embed_sources)
+        try:
+            vectors = self.embedder.encode([embed_sources[i] for i in ids])
+            for concept_id, vector in zip(ids, vectors):
+                self.concepts.set_embedding(concept_id, list(vector))
+            return len(ids), "ok"
+        except Exception:
+            logger.exception("Embedding failed during ingest; preserving DB sync")
+            return 0, "error"
