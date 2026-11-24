@@ -158,6 +158,7 @@ def test_ingest_reports_embed_status_skipped_when_disabled(db_session):
         body = c.post("/ingest", params={"path": str(FIXTURE)}).json()
         assert body["embed_status"] == "skipped"
         assert body["embedded_count"] == 0
+        assert "disabled" in body["embed_detail"].lower()
     app.dependency_overrides.clear()
 
 
@@ -192,6 +193,7 @@ def test_ingest_embed_failure_is_nonfatal(db_session):
         assert body["created"] == 3
         assert body["embed_status"] == "error"
         assert body["embedded_count"] == 0
+        assert "rate limit" in body["embed_detail"].lower()
         assert c.get("/concepts").json()["total"] == 3
     app.dependency_overrides.clear()
 

@@ -134,7 +134,7 @@ class IngestService:
         if on_before_embed is not None:
             on_before_embed(len(embed_sources))
 
-        embedded_count, embed_status = self._embed_concepts(embed_sources)
+        embedded_count, embed_status, embed_detail = self._embed_concepts(embed_sources)
 
         self.session.commit()
         return IngestResult(
@@ -145,21 +145,49 @@ class IngestService:
             deleted=deleted,
             embedded_count=embedded_count,
             embed_status=embed_status,
+            embed_detail=embed_detail,
             errors=errors,
         )
 
-    def _embed_concepts(self, embed_sources: dict[str, str]) -> tuple[int, str]:
-        """Encode and store embeddings, returning (count, status) without failing DB sync."""
+    def _embed_concepts(self, embed_sources: dict[str, str]) -> tuple[int, str, str]:
+        """Encode and store embeddings, returning (count, status, detail) without failing DB sync."""
         if self.embedder is None:
-            return 0, "skipped"
+            return (
+                0,
+                "skipped",
+                "Semantic search is disabled in this environment (embeddings turned off).",
+            )
         if not embed_sources:
-            return 0, "ok"
+            return 0, "ok", "No new or updated documents needed embedding in this sync."
         ids = list(embed_sources)
         try:
             vectors = self.embedder.encode([embed_sources[i] for i in ids])
             for concept_id, vector in zip(ids, vectors):
                 self.concepts.set_embedding(concept_id, list(vector))
-            return len(ids), "ok"
-        except Exception:
+            return len(ids), "ok", f"All {len(ids)} document(s) were embedded for semantic search."
+        except Exception as exc:
             logger.exception("Embedding failed during ingest; preserving DB sync")
-            return 0, "error"
+            return 0, "error", _friendly_embed_error(exc)
+
+
+def _friendly_embed_error(exc: Exception) -> str:
+    msg = str(exc).lower()
+    if isinstance(exc, (ModuleNotFoundError, ImportError)):
+        return (
+            "The AI embedding package is not installed on this server. "
+            "Your documents were saved and keyword search still works."
+        )
+    if "429" in msg or "rate limit" in msg:
+        return (
+            "The embedding service hit a rate limit. "
+            "Your documents were saved and keyword search still works."
+        )
+    if isinstance(exc, MemoryError) or "memory" in msg:
+        return (
+            "The server ran out of memory while generating embeddings. "
+            "Your documents were saved and keyword search still works."
+        )
+    return (
+        f"Embedding failed ({type(exc).__name__}: {exc}). "
+        "Your documents were saved and keyword search still works."
+    )

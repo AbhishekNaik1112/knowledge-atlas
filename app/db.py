@@ -109,6 +109,7 @@ class SyncEvent(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="ok")
     embedded_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     embed_status: Mapped[str] = mapped_column(Text, nullable=False, server_default="skipped")
+    embed_detail: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -128,7 +129,8 @@ def init_db(engine: Engine) -> None:
             text(
                 "ALTER TABLE sync_events "
                 "ADD COLUMN IF NOT EXISTS embedded_count INTEGER NOT NULL DEFAULT 0, "
-                "ADD COLUMN IF NOT EXISTS embed_status TEXT NOT NULL DEFAULT 'skipped'"
+                "ADD COLUMN IF NOT EXISTS embed_status TEXT NOT NULL DEFAULT 'skipped', "
+                "ADD COLUMN IF NOT EXISTS embed_detail TEXT"
             )
         )
 

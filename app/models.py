@@ -136,6 +136,7 @@ class IngestResult(BaseModel):
     deleted: int = 0
     embedded_count: int = 0
     embed_status: str = "skipped"
+    embed_detail: str | None = None
     errors: list[IngestError] = []
 
 
@@ -156,4 +157,5 @@ class SyncEventOut(BaseModel):
     status: str
     embedded_count: int
     embed_status: str
+    embed_detail: str | None = None
     synced_at: dt.datetime

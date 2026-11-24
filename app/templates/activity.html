@@ -1,23 +1,51 @@
 {% extends "base.html" %}
 {% block title %}Sync Activity — Knowledge Atlas{% endblock %}
+{% block extra_head %}
+<style>
+  th[title] {
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  .badge-btn {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+  }
+  .badge-btn:hover { opacity: .85; }
+  .detail-row td {
+    background: #f8fafc;
+    border-top: 0;
+    padding: .75rem 1rem;
+    font-size: .88rem;
+  }
+  .detail-box {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <p class="crumb"><a href="/ui">&larr; Back to catalog</a></p>
 <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:1rem;">
   <h1 style="margin:0;">Sync Activity</h1>
-  <small class="muted">Recent GitHub webhook syncs</small>
+  <small class="muted">Recent GitHub webhook syncs &middot; Click any Status or Embeds badge for details</small>
 </div>
 <div class="card" style="overflow-x:auto;">
   <table>
     <thead>
       <tr>
-        <th>Time (UTC)</th>
-        <th>Bundle</th>
-        <th>Commit</th>
-        <th>Pusher</th>
-        <th>Message</th>
-        <th>Changes (+ / ~ / -)</th>
-        <th>Status</th>
-        <th>Embeds</th>
+        <th title="When this sync ran (in UTC time).">Time (UTC)</th>
+        <th title="The knowledge repository or document collection that was synced.">Bundle</th>
+        <th title="The short ID of the GitHub change that triggered this sync.">Commit</th>
+        <th title="The GitHub user who pushed the change.">Pusher</th>
+        <th title="The description of the change from GitHub (or error summary).">Message</th>
+        <th title="Documents added (+), updated (~), or removed (-) in the catalog.">Changes (+ / ~ / -)</th>
+        <th title="Whether the documents were saved to the catalog database. Click a badge for details.">Status</th>
+        <th title="Whether AI semantic search embeddings succeeded. Click a badge to see what passed or why it failed.">Embeds</th>
       </tr>
     </thead>
     <tbody>
@@ -29,8 +57,47 @@
         <td>{{ e.pusher or '-' }}</td>
         <td>{{ e.commit_message or '-' }}</td>
         <td>+{{ e.created_count }} / ~{{ e.updated_count }} / -{{ e.deleted_count }}</td>
-        <td><span class="badge">{{ e.status }}</span></td>
-        <td>{% with sync_event=e %}{% include "_embed_badge.html" %}{% endwith %}</td>
+        <td>
+          <button type="button" class="badge-btn" onclick="toggleSyncDetail({{ e.id }})" aria-expanded="false" aria-controls="sync-detail-{{ e.id }}">
+            <span class="badge">{{ e.status }}</span>
+          </button>
+        </td>
+        <td>
+          <button type="button" class="badge-btn" onclick="toggleSyncDetail({{ e.id }})" aria-expanded="false" aria-controls="sync-detail-{{ e.id }}">
+            {% with sync_event=e %}{% include "_embed_badge.html" %}{% endwith %}
+          </button>
+        </td>
+      </tr>
+      <tr id="sync-detail-{{ e.id }}" class="detail-row" hidden>
+        <td colspan="8">
+          <div class="detail-box">
+            <div>
+              <strong>Catalog Sync:</strong>
+              {% if e.status == 'error' %}
+                Sync failed before documents could be saved ({{ e.commit_message or 'see server logs' }}).
+              {% else %}
+                Saved {{ e.created_count }} added, {{ e.updated_count }} updated, {{ e.deleted_count }} removed document(s).
+                {% if e.error_count > 0 %}
+                  <strong>{{ e.error_count }} file(s) had formatting errors and were skipped.</strong>
+                {% endif %}
+              {% endif %}
+            </div>
+            <div>
+              <strong>Semantic Embeddings:</strong>
+              {% if e.embed_detail %}
+                {{ e.embed_detail }}
+              {% elif e.embed_status == 'ok' %}
+                {{ e.embedded_count }} document(s) embedded for semantic search.
+              {% elif e.embed_status == 'in_progress' %}
+                Generating semantic search embeddings...
+              {% elif e.embed_status == 'error' %}
+                Embedding generation failed on the server. Keyword search still works.
+              {% else %}
+                Semantic embeddings were skipped.
+              {% endif %}
+            </div>
+          </div>
+        </td>
       </tr>
     {% else %}
       <tr><td colspan="8" class="muted" style="text-align:center; padding:1.5rem;"><em>No sync events recorded yet.</em></td></tr>
@@ -38,4 +105,11 @@
     </tbody>
   </table>
 </div>
+<script>
+function toggleSyncDetail(id) {
+  const row = document.getElementById("sync-detail-" + id);
+  if (!row) return;
+  row.hidden = !row.hidden;
+}
+</script>
 {% endblock %}

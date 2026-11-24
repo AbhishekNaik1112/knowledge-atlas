@@ -151,19 +151,36 @@ def test_ui_activity_and_home_show_embed_status(client, db_session):
 
     db_session.add_all([
         SyncEvent(bundle="r1", status="ok", embed_status="skipped", embedded_count=0),
-        SyncEvent(bundle="r2", status="ok", embed_status="error", embedded_count=0),
+        SyncEvent(
+            bundle="r2",
+            status="ok",
+            embed_status="error",
+            embedded_count=0,
+            embed_detail="Embedding service hit a rate limit. Keyword search still works.",
+        ),
         SyncEvent(bundle="r3", status="ok", embed_status="in_progress", embedded_count=0),
-        SyncEvent(bundle="r4", status="ok", embed_status="ok", embedded_count=5),
+        SyncEvent(
+            bundle="r4",
+            status="ok",
+            embed_status="ok",
+            embedded_count=5,
+            created_count=2,
+            updated_count=3,
+            embed_detail="All 5 document(s) were embedded for semantic search.",
+        ),
     ])
     db_session.flush()
 
     activity = client.get("/ui/activity")
     assert activity.status_code == 200
     assert "Embeds" in activity.text
+    assert 'title="Whether AI semantic search embeddings succeeded.' in activity.text
     assert "ok (5)" in activity.text
     assert "in progress" in activity.text
     assert "skipped" in activity.text
     assert "error" in activity.text
+    assert "Embedding service hit a rate limit." in activity.text
+    assert "2 added, 3 updated, 0 removed" in activity.text
 
     home = client.get("/ui")
     assert home.status_code == 200

@@ -106,6 +106,7 @@ class RepoSyncer:
                                 pusher=pusher,
                                 ref=ref,
                                 embed_status="in_progress",
+                                embed_detail=f"Generating semantic search embeddings for {embeddable_count} document(s)...",
                             )
                             session.commit()
 
@@ -132,6 +133,7 @@ class RepoSyncer:
                             status=final_status,
                             embedded_count=res.embedded_count,
                             embed_status=res.embed_status,
+                            embed_detail=res.embed_detail,
                         )
                     else:
                         sync_event.created_count = res.created
@@ -141,6 +143,7 @@ class RepoSyncer:
                         sync_event.status = final_status
                         sync_event.embedded_count = res.embedded_count
                         sync_event.embed_status = res.embed_status
+                        sync_event.embed_detail = res.embed_detail
                     session.commit()
             except Exception as exc:
                 with Session(make_engine()) as session:
