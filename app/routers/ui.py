@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Literal
 
@@ -21,9 +22,11 @@ from app.repository import (
     SqlSearchRepository,
     SqlSyncEventRepository,
 )
+from app.security import require_private_access
 
+logger = logging.getLogger(__name__)
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
-router = APIRouter(tags=["ui"])
+router = APIRouter(tags=["ui"], dependencies=[Depends(require_private_access)])
 
 
 @router.get("/ui", response_class=HTMLResponse)
@@ -86,10 +89,16 @@ def ui_search(
     bundle_f = bundle or None
     rows: list[Concept] | list[SearchHit]
     if q.strip():
+        query_vec: list[float] | None = None
         if settings.embeddings_enabled:
+            try:
+                query_vec = embedder.encode([q])[0]
+            except Exception:
+                logger.warning("UI query embedding failed; falling back to keyword search")
+        if query_vec is not None:
             rows, _ = search.hybrid(
                 q,
-                embedder.encode([q])[0],
+                query_vec,
                 type=type_f,
                 tags=tag_f,
                 prefix=prefix_f,

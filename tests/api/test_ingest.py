@@ -134,7 +134,6 @@ def _make_zip(src: Path) -> bytes:
 
 
 def _make_client(db_session, *, embeddings_enabled: bool, embedder=None):
-    from fastapi.testclient import TestClient
     from app.config import Settings, get_settings
     from app.db import get_session
     from app.embeddings import get_embedder

@@ -5,6 +5,7 @@ so a different backend (e.g. Postgres->another store) can be swapped behind the 
 from __future__ import annotations
 
 import builtins
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
@@ -54,6 +55,12 @@ class SqlConceptRepository:
 
     def get(self, concept_id: str) -> Concept | None:
         return self.s.get(Concept, concept_id)
+
+    def existing_ids(self, ids: Iterable[str]) -> set[str]:
+        unique = set(ids)
+        if not unique:
+            return set()
+        return set(self.s.execute(select(Concept.id).where(Concept.id.in_(unique))).scalars())
 
     def all(self) -> list[Concept]:
         return list(self.s.execute(select(Concept).order_by(Concept.id)).scalars())

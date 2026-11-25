@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import subprocess
 import tempfile
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from app.db import make_engine
+from app.db import get_engine
 from app.embeddings import Embedder
 from app.ingest import IngestService
 from app.repository import SqlConceptRepository, SqlEdgeRepository, SqlSyncEventRepository
+
+logger = logging.getLogger(__name__)
 
 
 def verify_signature(secret: str, body: bytes, signature_header: str | None) -> bool:
@@ -38,6 +41,7 @@ class RepoSyncer:
         github_token: str | None = None,
         namespace_by_bundle: bool = False,
         repos_config: dict[str, dict[str, str]] | None = None,
+        cloud_mode: bool = False,
     ) -> None:
         self.embedder = embedder
         self.sync_subdir = sync_subdir
@@ -45,6 +49,7 @@ class RepoSyncer:
         self.github_token = github_token
         self.namespace_by_bundle = namespace_by_bundle
         self.repos_config = repos_config or {}
+        self.cloud_mode = cloud_mode
 
     def _auth_clone_url(self, clone_url: str) -> str:
         if self.github_token and clone_url.startswith("https://"):
@@ -55,6 +60,9 @@ class RepoSyncer:
         repo = payload.get("repository", {})
         clone_url = repo.get("clone_url")
         if not clone_url:
+            return
+        if self.cloud_mode and not clone_url.startswith("https://github.com/"):
+            logger.warning("Blocked non-GitHub clone URL in cloud mode: %s", clone_url)
             return
         name = repo.get("name", "default")
         repo_cfg = self.repos_config.get(name, {})
@@ -85,7 +93,7 @@ class RepoSyncer:
                 subprocess.run(cmd, check=True, capture_output=True)
 
                 target_dir = Path(tmp) / subdir if subdir else Path(tmp)
-                with Session(make_engine()) as session:
+                with Session(get_engine()) as session:
                     service = IngestService(
                         SqlConceptRepository(session),
                         SqlEdgeRepository(session),
@@ -146,7 +154,7 @@ class RepoSyncer:
                         sync_event.embed_detail = res.embed_detail
                     session.commit()
             except Exception as exc:
-                with Session(make_engine()) as session:
+                with Session(get_engine()) as session:
                     SqlSyncEventRepository(session).record(
                         bundle=name,
                         source="webhook",

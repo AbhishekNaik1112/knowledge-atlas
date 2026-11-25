@@ -100,7 +100,7 @@ def test_repo_syncer_clones_and_ingests_real_git_repo(db_session, tmp_path, monk
     subprocess.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
     subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
 
-    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    monkeypatch.setattr("app.webhook.get_engine", lambda: db_session.get_bind())
     syncer = RepoSyncer(embedder=FakeEmbedder())
     syncer.sync({"repository": {"clone_url": str(bare), "name": "git-bundle"}})
 
@@ -131,7 +131,7 @@ def test_repo_syncer_prunes_deleted_and_records_sync_event(db_session, tmp_path,
     subprocess.run(["git", "-C", str(work), "commit", "-m", "add docs"], check=True, capture_output=True)
     subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
 
-    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    monkeypatch.setattr("app.webhook.get_engine", lambda: db_session.get_bind())
     syncer = RepoSyncer(sync_subdir="docs")
 
     # Non-default branch is ignored
@@ -202,7 +202,7 @@ def test_repo_syncer_records_embed_status_ok_skipped_and_error(db_session, tmp_p
     subprocess.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
     subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
 
-    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    monkeypatch.setattr("app.webhook.get_engine", lambda: db_session.get_bind())
     payload = {"repository": {"clone_url": str(bare), "name": "embed-test"}}
 
     RepoSyncer(embedder=FakeEmbedder()).sync(payload)
@@ -254,7 +254,7 @@ def test_repo_syncer_sets_in_progress_before_embedding(db_session, tmp_path, mon
     subprocess.run(["git", "-C", str(work), "commit", "-m", "init"], check=True, capture_output=True)
     subprocess.run(["git", "clone", "--bare", str(work), str(bare)], check=True, capture_output=True)
 
-    monkeypatch.setattr("app.webhook.make_engine", lambda: db_session.get_bind())
+    monkeypatch.setattr("app.webhook.get_engine", lambda: db_session.get_bind())
     RepoSyncer(embedder=_SpyEmbedder()).sync(
         {"repository": {"clone_url": str(bare), "name": "progress-test"}}
     )

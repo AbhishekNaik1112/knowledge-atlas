@@ -1,15 +1,17 @@
 """Application services — orchestrate repositories into a unit of work.
 
 ConceptService owns the write path: persist a concept, re-derive its outgoing edges from the
-markdown body, then commit atomically. Reused by the CRUD router and (later) the ingest pipeline.
+markdown body, then commit atomically. Reused by the CRUD router, ingest, and MCP.
 """
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.db import Concept
-from app.embeddings import Embedder
+from app.embeddings import Embedder, build_embed_text
 from app.links import resolved_links
 from app.repository import (
     ConceptInput,
@@ -17,6 +19,8 @@ from app.repository import (
     SqlConceptRepository,
     SqlEdgeRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ConceptService:
@@ -53,6 +57,11 @@ class ConceptService:
         self.session.commit()
         return obj
 
+    def upsert(self, data: ConceptInput) -> Concept:
+        if self.concepts.get(data.id) is not None:
+            return self.update(data.id, data)
+        return self.create(data)
+
     def delete(self, concept_id: str) -> None:
         self.concepts.delete(concept_id)
         self.edges.mark_resolved_for_target(concept_id, False)
@@ -61,18 +70,24 @@ class ConceptService:
     def _sync_embedding(self, obj: Concept) -> None:
         if self.embedder is None:
             return
-        text = " ".join(x for x in (obj.title, obj.description, obj.body) if x)
-        if text:
+        text = build_embed_text(obj.title, obj.description, obj.body)
+        if not text:
+            return
+        try:
             vector = self.embedder.encode([text])[0]
             self.concepts.set_embedding(obj.id, list(vector))
+        except Exception:
+            logger.warning("Embedding failed for concept %s; preserving DB write", obj.id)
 
     def _sync_edges(self, source_id: str, body: str) -> None:
+        links = resolved_links(source_id, body)
+        known = self.concepts.existing_ids(target for target, _ in links)
         edges = [
             EdgeInput(
                 target_id=target,
                 anchor_text=anchor,
-                resolved=self.concepts.get(target) is not None,
+                resolved=target in known,
             )
-            for target, anchor in resolved_links(source_id, body)
+            for target, anchor in links
         ]
         self.edges.replace_for_source(source_id, edges)

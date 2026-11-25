@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,8 +12,14 @@ from app.dependencies import get_search_repo
 from app.embeddings import Embedder, get_embedder
 from app.models import Page, SearchHitOut
 from app.repository import SqlSearchRepository
+from app.security import require_private_access
 
-router = APIRouter(prefix="/search", tags=["search"])
+logger = logging.getLogger(__name__)
+router = APIRouter(
+    prefix="/search",
+    tags=["search"],
+    dependencies=[Depends(require_private_access)],
+)
 
 
 @router.get("", response_model=Page[SearchHitOut])
@@ -42,26 +49,36 @@ def search(
     else:
         if not settings.embeddings_enabled:
             raise HTTPException(status_code=400, detail="semantic search is disabled")
-        query_vec = embedder.encode([q])[0]
-        if mode == "semantic":
-            hits, total = repo.semantic(
-                query_vec,
-                type=type,
-                tags=tag_filter,
-                bundle=bundle,
-                limit=effective_limit,
-                offset=offset,
-            )
-        else:  # hybrid
-            hits, total = repo.hybrid(
-                q,
-                query_vec,
-                type=type,
-                tags=tag_filter,
-                bundle=bundle,
-                limit=effective_limit,
-                offset=offset,
-            )
+        try:
+            query_vec = embedder.encode([q])[0]
+        except Exception:
+            if mode == "hybrid":
+                logger.warning("Hybrid query embedding failed; falling back to keyword search")
+                hits, total = repo.search(
+                    q, type=type, tags=tag_filter, bundle=bundle, limit=effective_limit, offset=offset
+                )
+            else:
+                raise HTTPException(status_code=503, detail="semantic search temporarily unavailable")
+        else:
+            if mode == "semantic":
+                hits, total = repo.semantic(
+                    query_vec,
+                    type=type,
+                    tags=tag_filter,
+                    bundle=bundle,
+                    limit=effective_limit,
+                    offset=offset,
+                )
+            else:  # hybrid
+                hits, total = repo.hybrid(
+                    q,
+                    query_vec,
+                    type=type,
+                    tags=tag_filter,
+                    bundle=bundle,
+                    limit=effective_limit,
+                    offset=offset,
+                )
 
     return Page(
         items=[SearchHitOut.model_validate(h) for h in hits],

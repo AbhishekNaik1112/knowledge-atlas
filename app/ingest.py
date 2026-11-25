@@ -13,10 +13,8 @@ from dataclasses import replace
 
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger(__name__)
-
 from app.bundle import BundleEntry, read_dir, read_zip
-from app.embeddings import Embedder
+from app.embeddings import Embedder, build_embed_text
 from app.links import resolved_links
 from app.models import IngestError, IngestResult
 from app.parser import InvalidFrontmatterError, MissingTypeError, is_structural_file, parse_concept
@@ -26,6 +24,8 @@ from app.repository import (
     SqlConceptRepository,
     SqlEdgeRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class IngestService:
@@ -107,8 +107,8 @@ class IngestService:
                 created += 1
                 created_ids.append(parsed.id)
             bodies[parsed.id] = parsed.body
-            embed_sources[parsed.id] = " ".join(
-                x for x in (parsed.title, parsed.description, parsed.body) if x
+            embed_sources[parsed.id] = build_embed_text(
+                parsed.title, parsed.description, parsed.body
             )
 
         if prune:
@@ -120,14 +120,24 @@ class IngestService:
         for cid in created_ids:
             self.edges.mark_resolved_for_target(cid, True)
 
-        for concept_id, body in bodies.items():
+        links_by_source = {
+            concept_id: resolved_links(concept_id, body) for concept_id, body in bodies.items()
+        }
+        external_targets = {
+            target
+            for links in links_by_source.values()
+            for target, _ in links
+            if target not in seen_ids
+        }
+        known_targets = seen_ids | self.concepts.existing_ids(external_targets)
+        for concept_id, links in links_by_source.items():
             edges = [
                 EdgeInput(
                     target_id=target,
                     anchor_text=anchor,
-                    resolved=self.concepts.get(target) is not None,
+                    resolved=target in known_targets,
                 )
-                for target, anchor in resolved_links(concept_id, body)
+                for target, anchor in links
             ]
             self.edges.replace_for_source(concept_id, edges)
 
