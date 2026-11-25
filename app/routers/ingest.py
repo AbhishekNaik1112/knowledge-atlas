@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
+from app.config import Settings, get_settings
 from app.dependencies import get_ingest_service
 from app.ingest import IngestService
 from app.models import IngestResult
@@ -20,6 +21,7 @@ async def ingest(
     namespace_ids: bool = Query(False, description="prefix concept IDs with bundle name"),
     file: UploadFile | None = File(None),
     svc: IngestService = Depends(get_ingest_service),
+    settings: Settings = Depends(get_settings),
 ) -> IngestResult:
     if file is not None:
         try:
@@ -32,6 +34,8 @@ async def ingest(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
     if path is not None:
+        if settings.private_mode:
+            raise HTTPException(status_code=403, detail="server-side path access is disabled in private mode")
         try:
             return svc.ingest_dir(path, bundle=bundle, prune=prune, namespace_ids=namespace_ids)
         except (FileNotFoundError, NotADirectoryError, ValueError) as exc:

@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends
 from app.dependencies import get_concept_repo, get_edge_repo
 from app.models import GraphEdge, GraphNode, GraphResponse
 from app.repository import SqlConceptRepository, SqlEdgeRepository
+from app.security import require_private_access
 
-router = APIRouter(tags=["graph"])
+router = APIRouter(tags=["graph"], dependencies=[Depends(require_private_access)])
 
 
 @router.get("/graph", response_model=GraphResponse)

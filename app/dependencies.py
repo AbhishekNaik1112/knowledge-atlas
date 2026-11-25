@@ -73,4 +73,5 @@ def get_repo_syncer(
         github_token=settings.github_token,
         namespace_by_bundle=settings.namespace_by_bundle,
         repos_config=settings.github_repos_config,
+        cloud_mode=settings.private_mode,
     )

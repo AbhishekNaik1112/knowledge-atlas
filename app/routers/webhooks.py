@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
 
@@ -10,8 +11,10 @@ from app.config import Settings, get_settings
 from app.dependencies import get_repo_syncer, get_sync_repo
 from app.models import SyncEventOut
 from app.repository import SqlSyncEventRepository
+from app.security import require_private_access
 from app.webhook import RepoSyncer, verify_signature
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["webhooks"])
 
 
@@ -28,6 +31,7 @@ async def github_webhook(
 
     body = await request.body()
     if not verify_signature(settings.github_webhook_secret, body, x_hub_signature_256):
+        logger.warning("Rejected GitHub webhook with invalid signature")
         raise HTTPException(status_code=401, detail="invalid signature")
 
     try:
@@ -38,7 +42,11 @@ async def github_webhook(
     return {"status": "accepted"}
 
 
-@router.get("/syncs", response_model=list[SyncEventOut])
+@router.get(
+    "/syncs",
+    response_model=list[SyncEventOut],
+    dependencies=[Depends(require_private_access)],
+)
 def list_sync_events(
     limit: int = Query(20, ge=1, le=100),
     syncs: SqlSyncEventRepository = Depends(get_sync_repo),

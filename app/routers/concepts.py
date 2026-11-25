@@ -18,10 +18,14 @@ from app.models import (
 )
 from app.render import render_markdown
 from app.repository import ConceptInput, SqlConceptRepository, SqlEdgeRepository
-from app.security import require_api_key
+from app.security import require_api_key, require_private_access
 from app.services import ConceptService
 
-router = APIRouter(prefix="/concepts", tags=["concepts"])
+router = APIRouter(
+    prefix="/concepts",
+    tags=["concepts"],
+    dependencies=[Depends(require_private_access)],
+)
 
 
 def _to_out(obj, *, render: bool = False) -> ConceptOut:

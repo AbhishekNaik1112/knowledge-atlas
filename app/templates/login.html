@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign In — Knowledge Atlas{% endblock %}
+{% block content %}
+<div class="card" style="max-width:440px; margin:3.5rem auto; padding:2.25rem; text-align:center;">
+  <span class="badge" style="margin-bottom:.75rem;">Private Instance</span>
+  <h1 style="margin:.25rem 0 .5rem; font-size:1.5rem; letter-spacing:-.015em;">Sign in to Knowledge Atlas</h1>
+  <p class="muted" style="margin:0 0 1.5rem; font-size:.92rem;">
+    Authenticate with the authorized GitHub account to access your Second Brain.
+  </p>
+  <a href="/auth/github" class="btn btn-primary" style="padding:.65rem 1.25rem; font-weight:600;">
+    Sign in with GitHub
+  </a>
+</div>
+{% endblock %}
