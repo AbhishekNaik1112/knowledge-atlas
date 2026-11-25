@@ -205,21 +205,21 @@ def test_repo_syncer_records_embed_status_ok_skipped_and_error(db_session, tmp_p
     monkeypatch.setattr("app.webhook.get_engine", lambda: db_session.get_bind())
     payload = {"repository": {"clone_url": str(bare), "name": "embed-test"}}
 
-    RepoSyncer(embedder=FakeEmbedder()).sync(payload)
-    RepoSyncer(embedder=None).sync(payload)
     RepoSyncer(embedder=_FailingEmbedder()).sync(payload)
+    RepoSyncer(embedder=None).sync(payload)
+    RepoSyncer(embedder=FakeEmbedder()).sync(payload)
 
     db_session.expire_all()
     assert db_session.get(Concept, "note") is not None
 
     syncs = client.get("/syncs").json()
     assert syncs[0]["status"] == "ok"
-    assert syncs[0]["embed_status"] == "error"
-    assert syncs[0]["embedded_count"] == 0
+    assert syncs[0]["embed_status"] == "ok"
+    assert syncs[0]["embedded_count"] == 1
     assert syncs[1]["embed_status"] == "skipped"
     assert syncs[1]["embedded_count"] == 0
-    assert syncs[2]["embed_status"] == "ok"
-    assert syncs[2]["embedded_count"] == 1
+    assert syncs[2]["embed_status"] == "error"
+    assert syncs[2]["embedded_count"] == 0
 
     db_session.query(SyncEvent).delete()
     if (obj := db_session.get(Concept, "note")) is not None:

@@ -99,7 +99,15 @@ class IngestService:
             if namespace_ids and not parsed.id.startswith(f"{bundle}/"):
                 parsed = replace(parsed, id=f"{bundle}/{parsed.id}")
             seen_ids.add(parsed.id)
-            existed = self.concepts.get(parsed.id) is not None
+            existing = self.concepts.get(parsed.id)
+            existed = existing is not None
+            new_embed_text = build_embed_text(parsed.title, parsed.description, parsed.body)
+            needs_embed = (
+                existing is None
+                or existing.embedding is None
+                or build_embed_text(existing.title, existing.description, existing.body)
+                != new_embed_text
+            )
             self.concepts.upsert(ConceptInput.from_parsed(parsed))
             if existed:
                 updated += 1
@@ -107,9 +115,8 @@ class IngestService:
                 created += 1
                 created_ids.append(parsed.id)
             bodies[parsed.id] = parsed.body
-            embed_sources[parsed.id] = build_embed_text(
-                parsed.title, parsed.description, parsed.body
-            )
+            if needs_embed and new_embed_text:
+                embed_sources[parsed.id] = new_embed_text
 
         if prune:
             deleted_ids = self.concepts.delete_missing_in_bundle(bundle, seen_ids)
@@ -168,7 +175,7 @@ class IngestService:
                 "Semantic search is disabled in this environment (embeddings turned off).",
             )
         if not embed_sources:
-            return 0, "ok", "No new or updated documents needed embedding in this sync."
+            return 0, "ok", "No new, changed, or unembedded documents needed embedding in this sync."
         ids = list(embed_sources)
         try:
             vectors = self.embedder.encode([embed_sources[i] for i in ids])

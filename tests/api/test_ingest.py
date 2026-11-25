@@ -171,13 +171,51 @@ def test_ingest_reports_embed_status_ok_for_dir_and_zip(db_session):
         assert dir_body["embed_status"] == "ok"
         assert dir_body["embedded_count"] == 3
 
-        zip_body = c.post(
+        # Re-ingesting identical already-embedded docs via zip skips redundant embedding calls
+        unchanged_zip = c.post(
             "/ingest",
             params={"bundle": "crypto_bitcoin"},
             files={"file": ("bundle.zip", _make_zip(FIXTURE), "application/zip")},
         ).json()
+        assert unchanged_zip["embed_status"] == "ok"
+        assert unchanged_zip["embedded_count"] == 0
+
+        # Fresh IDs via namespace_ids=true get embedded
+        zip_body = c.post(
+            "/ingest",
+            params={"bundle": "ns_bundle", "namespace_ids": "true"},
+            files={"file": ("bundle.zip", _make_zip(FIXTURE), "application/zip")},
+        ).json()
         assert zip_body["embed_status"] == "ok"
         assert zip_body["embedded_count"] == 3
+    app.dependency_overrides.clear()
+
+
+def test_ingest_reembeds_only_changed_or_unembedded_docs(db_session, tmp_path):
+    from fastapi.testclient import TestClient
+    from app.db import Concept
+    from tests.api.test_semantic import FakeEmbedder
+
+    (tmp_path / "a.md").write_text("---\ntype: Doc\ntitle: A\n---\nalpha", encoding="utf-8")
+    (tmp_path / "b.md").write_text("---\ntype: Doc\ntitle: B\n---\nbeta", encoding="utf-8")
+
+    app = _make_client(db_session, embeddings_enabled=True, embedder=FakeEmbedder)
+    with TestClient(app) as c:
+        r1 = c.post("/ingest", params={"path": str(tmp_path)}).json()
+        assert r1["embedded_count"] == 2
+
+        # Modify only b.md -> only b is re-embedded
+        (tmp_path / "b.md").write_text("---\ntype: Doc\ntitle: B\n---\nbeta v2", encoding="utf-8")
+        r2 = c.post("/ingest", params={"path": str(tmp_path)}).json()
+        assert r2["embedded_count"] == 1
+
+        # Clear a's embedding (simulating prior 429 failure) -> a gets embedded even without text edit
+        obj_a = db_session.get(Concept, "a")
+        assert obj_a is not None
+        obj_a.embedding = None
+        db_session.flush()
+        r3 = c.post("/ingest", params={"path": str(tmp_path)}).json()
+        assert r3["embedded_count"] == 1
     app.dependency_overrides.clear()
 
 
