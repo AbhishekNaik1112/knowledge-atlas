@@ -21,6 +21,16 @@ class Settings(BaseSettings):
 
     embeddings_enabled: bool = False
     embedding_model: str = "all-MiniLM-L6-v2"
+    gemini_api_key: str | None = None
+    gemini_embedding_model: str = "gemini-embedding-001"
+
+    private_mode: bool = False
+    session_secret: str | None = None
+    github_client_id: str | None = None
+    github_client_secret: str | None = None
+    allowed_github_login: str | None = None
+    rate_limit_auth_per_5min: int = 10
+    rate_limit_api_per_min: int = 120
 
     auto_init_db: bool = False  # create schema on startup (used in cloud where there's no manual step)
 
