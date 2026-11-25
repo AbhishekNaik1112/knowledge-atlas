@@ -1,5 +1,5 @@
 {% if concepts %}
-<ul class="grid">
+<ul class="grid" role="list">
 {% for c in concepts %}
   <li class="card concept-card">
     <div class="card-top">
@@ -18,11 +18,14 @@
       </div>
     {% endif %}
     {% if c.updated_at is defined and c.updated_at %}
-      <small style="font-size:.76rem;">Updated {{ c.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+      <small style="font-size:.75rem;">Updated {{ c.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
     {% endif %}
   </li>
 {% endfor %}
 </ul>
 {% else %}
-<div class="card empty-state"><em>No concepts.</em></div>
+<div class="card empty-state">
+  <p style="margin:0 0 .35rem; font-weight:600; color:var(--text);">No matching concepts</p>
+  <small>Try clearing a filter or searching by a different keyword.</small>
+</div>
 {% endif %}

@@ -10,20 +10,17 @@
     gap: .75rem;
     margin-bottom: .9rem;
   }
-  .graph-bar h1 { margin: 0; font-size: 1.65rem; }
+  .graph-bar h1 { margin: 0; font-size: 1.65rem; letter-spacing: -.015em; }
   .graph-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  .btn {
+  .graph-filter {
+    padding: .4rem .7rem;
     border: 1px solid var(--border);
+    border-radius: 6px;
     background: var(--surface);
     color: var(--text);
-    padding: .4rem .8rem;
-    border-radius: 7px;
-    font-size: .86rem;
-    font-weight: 500;
-    cursor: pointer;
-    box-shadow: var(--shadow);
+    font-size: .85rem;
+    min-width: 190px;
   }
-  .btn:hover { border-color: var(--accent); color: var(--accent); }
   .legend {
     display: flex;
     flex-wrap: wrap;
@@ -35,15 +32,15 @@
   .legend-item { display: inline-flex; align-items: center; gap: .35rem; }
   .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .graph-frame { position: relative; overflow: hidden; }
-  #cy { width: 100%; height: 70vh; min-height: 540px; background: #fcfcfd; }
+  #cy { width: 100%; height: 70vh; min-height: 540px; background: var(--surface); }
   #hover-info {
     position: absolute;
     left: 1rem;
     bottom: 1rem;
-    background: rgba(15, 23, 42, .9);
-    color: #f8fafc;
+    background: var(--text);
+    color: var(--bg);
     padding: .45rem .8rem;
-    border-radius: 7px;
+    border-radius: 6px;
     font-size: .84rem;
     pointer-events: none;
     display: none;
@@ -57,13 +54,14 @@
     <small id="graph-stats">Loading graph…</small>
   </div>
   <div class="graph-controls">
+    <input id="graph-filter" class="graph-filter" type="search" aria-label="Filter graph nodes" placeholder="Highlight node…">
     <button class="btn" id="btn-fit" type="button">Fit to screen</button>
     <button class="btn" id="btn-layout" type="button">Re-layout</button>
   </div>
 </div>
 <div class="legend">
-  <span class="legend-item"><span class="swatch" style="background:#7c3aed"></span>architecture-guide</span>
-  <span class="legend-item"><span class="swatch" style="background:#2563eb"></span>technical-note</span>
+  <span class="legend-item"><span class="swatch" style="background:#0f766e"></span>architecture-guide</span>
+  <span class="legend-item"><span class="swatch" style="background:#0284c7"></span>technical-note</span>
   <span class="legend-item"><span class="swatch" style="background:#dc2626"></span>security-note</span>
   <span class="legend-item"><span class="swatch" style="background:#16a34a"></span>pattern</span>
   <span class="legend-item"><span class="swatch" style="background:#d97706"></span>reference</span>
@@ -75,12 +73,21 @@
 <script src="https://unpkg.com/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
 <script>
   const TYPE_COLORS = {
-    'architecture-guide': '#7c3aed',
-    'technical-note': '#2563eb',
+    'architecture-guide': '#0f766e',
+    'technical-note': '#0284c7',
     'security-note': '#dc2626',
     'pattern': '#16a34a',
     'reference': '#d97706'
   };
+  function themeTokens() {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      text: cs.getPropertyValue('--text').trim() || '#1c1917',
+      border: cs.getPropertyValue('--border').trim() || '#e7e5e4',
+      muted: cs.getPropertyValue('--muted').trim() || '#57534e',
+      accent: cs.getPropertyValue('--accent').trim() || '#0f766e'
+    };
+  }
   fetch('/graph').then(r => r.json()).then(g => {
     document.getElementById('graph-stats').textContent =
       `${g.nodes.length} concepts · ${g.edges.length} resolved cross-links (click any node to open)`;
@@ -90,10 +97,11 @@
         id: n.id,
         label: n.title || n.id,
         type: n.type,
-        color: TYPE_COLORS[n.type] || '#4f46e5'
+        color: TYPE_COLORS[n.type] || '#0f766e'
       }
     }));
     g.edges.forEach(e => elements.push({ data: { source: e.source, target: e.target } }));
+    const tok = themeTokens();
     const cy = cytoscape({
       container: document.getElementById('cy'),
       elements: elements,
@@ -103,7 +111,7 @@
           style: {
             'label': 'data(label)',
             'font-size': 9,
-            'color': '#1e293b',
+            'color': tok.text,
             'text-valign': 'bottom',
             'text-margin-y': 4,
             'background-color': 'data(color)',
@@ -115,17 +123,37 @@
           selector: 'edge',
           style: {
             'width': 1.2,
-            'line-color': '#cbd5e1',
+            'line-color': tok.border,
             'target-arrow-shape': 'triangle',
-            'target-arrow-color': '#94a3b8',
+            'target-arrow-color': tok.muted,
             'curve-style': 'bezier',
             'arrow-scale': 0.8
           }
         },
-        { selector: '.dim', style: { 'opacity': 0.18 } },
-        { selector: 'edge.hi', style: { 'line-color': '#4f46e5', 'target-arrow-color': '#4f46e5', 'width': 2 } }
+        { selector: '.dim', style: { 'opacity': 0.16 } },
+        { selector: 'edge.hi', style: { 'line-color': tok.accent, 'target-arrow-color': tok.accent, 'width': 2 } }
       ],
       layout: { name: 'cose', animate: false, padding: 30, nodeRepulsion: 8000 }
+    });
+    window.addEventListener('ka-theme-change', () => {
+      const next = themeTokens();
+      cy.style()
+        .selector('node').style('color', next.text)
+        .selector('edge').style({ 'line-color': next.border, 'target-arrow-color': next.muted })
+        .selector('edge.hi').style({ 'line-color': next.accent, 'target-arrow-color': next.accent })
+        .update();
+    });
+    const filterInput = document.getElementById('graph-filter');
+    filterInput.addEventListener('input', () => {
+      const q = filterInput.value.trim().toLowerCase();
+      cy.elements().removeClass('dim hi');
+      if (!q) return;
+      const matches = cy.nodes().filter(n =>
+        n.id().toLowerCase().includes(q) || (n.data('label') || '').toLowerCase().includes(q)
+      );
+      cy.elements().addClass('dim');
+      matches.closedNeighborhood().removeClass('dim');
+      matches.connectedEdges().addClass('hi');
     });
     const info = document.getElementById('hover-info');
     cy.on('mouseover', 'node', evt => {
@@ -138,7 +166,7 @@
       info.style.display = 'block';
     });
     cy.on('mouseout', 'node', () => {
-      cy.elements().removeClass('dim hi');
+      if (!filterInput.value.trim()) { cy.elements().removeClass('dim hi'); }
       info.style.display = 'none';
     });
     cy.on('tap', 'node', evt => {

@@ -16,7 +16,7 @@
   }
   .badge-btn:hover { opacity: .85; }
   .detail-row td {
-    background: #f8fafc;
+    background: var(--surface-subtle);
     border-top: 0;
     padding: .75rem 1rem;
     font-size: .88rem;
@@ -29,9 +29,9 @@
 </style>
 {% endblock %}
 {% block content %}
-<p class="crumb"><a href="/ui">&larr; Back to catalog</a></p>
-<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:1rem;">
-  <h1 style="margin:0;">Sync Activity</h1>
+<p style="margin:0 0 1rem; font-size:.88rem;"><a href="/ui" style="color:var(--muted); text-decoration:none;">&larr; Back to catalog</a></p>
+<div style="display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:.5rem; margin-bottom:1rem;">
+  <h1 style="margin:0; font-size:1.65rem; letter-spacing:-.015em;">Sync Activity</h1>
   <small class="muted">Recent GitHub webhook syncs &middot; Click any Status or Embeds badge for details</small>
 </div>
 <div class="card" style="overflow-x:auto;">
@@ -58,12 +58,12 @@
         <td>{{ e.commit_message or '-' }}</td>
         <td>+{{ e.created_count }} / ~{{ e.updated_count }} / -{{ e.deleted_count }}</td>
         <td>
-          <button type="button" class="badge-btn" onclick="toggleSyncDetail({{ e.id }})" aria-expanded="false" aria-controls="sync-detail-{{ e.id }}">
+          <button type="button" class="badge-btn" data-detail-for="{{ e.id }}" onclick="toggleSyncDetail({{ e.id }})" aria-expanded="false" aria-controls="sync-detail-{{ e.id }}">
             <span class="badge">{{ e.status }}</span>
           </button>
         </td>
         <td>
-          <button type="button" class="badge-btn" onclick="toggleSyncDetail({{ e.id }})" aria-expanded="false" aria-controls="sync-detail-{{ e.id }}">
+          <button type="button" class="badge-btn" data-detail-for="{{ e.id }}" onclick="toggleSyncDetail({{ e.id }})" aria-expanded="false" aria-controls="sync-detail-{{ e.id }}">
             {% with sync_event=e %}{% include "_embed_badge.html" %}{% endwith %}
           </button>
         </td>
@@ -109,7 +109,11 @@
 function toggleSyncDetail(id) {
   const row = document.getElementById("sync-detail-" + id);
   if (!row) return;
-  row.hidden = !row.hidden;
+  const open = row.hidden;
+  row.hidden = !open;
+  document.querySelectorAll('[data-detail-for="' + id + '"]').forEach(function (btn) {
+    btn.setAttribute("aria-expanded", String(open));
+  });
 }
 </script>
 {% endblock %}

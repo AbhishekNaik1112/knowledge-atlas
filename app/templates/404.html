@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Not Found — Knowledge Atlas{% endblock %}
 {% block content %}
-<div class="card" style="padding: 2rem; max-width: 560px; margin: 2rem auto; text-align: center;">
-  <h1 style="margin-top: 0;">Concept not found</h1>
-  <p class="muted">No concept with id <code>{{ concept_id }}</code> exists in the catalog.</p>
-  <p style="margin-bottom: 0;"><a href="/ui">&larr; Back to catalog</a></p>
+<div class="card" style="padding: 2.25rem; max-width: 540px; margin: 3rem auto; text-align: center;">
+  <span class="badge badge-neutral" style="margin-bottom:.75rem;">404</span>
+  <h1 style="margin: .25rem 0 .5rem; font-size: 1.5rem;">Concept not found</h1>
+  <p class="muted" style="margin: 0 0 1.25rem;">No concept with id <code>{{ concept_id }}</code> exists in the catalog.</p>
+  <a href="/ui" class="btn">&larr; Back to catalog</a>
 </div>
 {% endblock %}

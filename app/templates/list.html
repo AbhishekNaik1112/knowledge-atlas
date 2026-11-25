@@ -11,7 +11,6 @@
     margin-bottom: 1rem;
   }
   .hero h1 { margin: 0; font-size: 1.75rem; letter-spacing: -.02em; }
-  .search-wrap { position: relative; margin-bottom: .85rem; }
   .sync-banner {
     display: flex;
     flex-wrap: wrap;
@@ -20,32 +19,18 @@
     gap: .5rem;
     padding: .65rem 1rem;
     margin-bottom: 1rem;
-    font-size: .86rem;
-    background: #f1f5f9;
+    font-size: .85rem;
+    background: var(--surface-subtle);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
   }
-  .filter-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .6rem;
-    margin-bottom: 1.25rem;
-    align-items: center;
-  }
-  .filter-bar select {
-    padding: .42rem .65rem;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    background: var(--surface);
-    color: var(--text);
-    font-size: .86rem;
-  }
+  .search-wrap { position: relative; margin-bottom: .75rem; }
   input[type=search] {
     width: 100%;
-    padding: .8rem 1rem .8rem 2.6rem;
-    font-size: 1rem;
+    padding: .8rem 3.2rem .8rem 2.5rem;
+    font-size: .98rem;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius);
     background: var(--surface);
     color: var(--text);
     box-shadow: var(--shadow);
@@ -54,7 +39,7 @@
   }
   input[type=search]:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(79, 70, 229, .15);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
   .search-icon {
     position: absolute;
@@ -63,18 +48,49 @@
     transform: translateY(-50%);
     color: var(--muted);
     pointer-events: none;
+    font-size: .95rem;
+  }
+  .search-kbd {
+    position: absolute;
+    right: .85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .74rem;
+    color: var(--muted);
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: .1rem .4rem;
+    pointer-events: none;
   }
   .htmx-indicator {
     position: absolute;
-    right: 1rem;
+    right: 2.8rem;
     top: 50%;
     transform: translateY(-50%);
-    font-size: .82rem;
+    font-size: .8rem;
     color: var(--accent);
     opacity: 0;
     transition: opacity .15s;
   }
   .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    margin-bottom: 1.25rem;
+    align-items: center;
+  }
+  .filter-bar select {
+    padding: .42rem .65rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: .85rem;
+    font-family: inherit;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
@@ -88,12 +104,11 @@
     display: flex;
     flex-direction: column;
     gap: .5rem;
-    transition: transform .12s, border-color .15s, box-shadow .15s;
+    transition: border-color .15s, transform .12s;
   }
   .concept-card:hover {
-    transform: translateY(-2px);
-    border-color: #c7d2fe;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, .08);
+    transform: translateY(-1px);
+    border-color: var(--accent);
   }
   .card-top {
     display: flex;
@@ -103,7 +118,7 @@
   }
   .card-title {
     font-weight: 600;
-    font-size: 1.02rem;
+    font-size: 1rem;
     text-decoration: none;
     color: var(--text);
     line-height: 1.35;
@@ -111,15 +126,15 @@
   .card-title:hover { color: var(--accent); }
   .card-desc {
     margin: 0;
-    font-size: .88rem;
-    color: #475569;
+    font-size: .875rem;
+    color: var(--muted);
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
   .card-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: auto; padding-top: .25rem; }
-  .empty-state { padding: 2rem; text-align: center; color: var(--muted); }
+  .empty-state { padding: 2.5rem 1.5rem; text-align: center; color: var(--muted); }
 </style>
 {% endblock %}
 {% block content %}
@@ -146,10 +161,12 @@
   <a href="/ui/activity">View sync activity &rarr;</a>
 </div>
 <div class="search-wrap">
-  <span class="search-icon">&#128269;</span>
-  <input class="filter-ctrl" type="search" name="q" placeholder="Search concepts by keyword or meaning (e.g. 'preventing SQL concatenation' or 'ETag')…"
+  <span class="search-icon" aria-hidden="true">&#128269;</span>
+  <input id="catalog-search" class="filter-ctrl" type="search" name="q" aria-label="Search concepts"
+         placeholder="Search concepts by keyword or meaning (e.g. 'preventing SQL concatenation' or 'ETag')…"
          hx-get="/ui/search" hx-trigger="input changed delay:300ms, search" hx-target="#results" hx-include=".filter-ctrl" hx-indicator="#search-spinner">
   <span id="search-spinner" class="htmx-indicator">Searching…</span>
+  <kbd class="search-kbd" aria-hidden="true">/</kbd>
 </div>
 <div class="filter-bar">
   <select class="filter-ctrl" name="sort" aria-label="Sort" hx-get="/ui/search" hx-trigger="change" hx-target="#results" hx-include=".filter-ctrl">
@@ -174,4 +191,14 @@
   </select>
 </div>
 <div id="results">{% include "concept_rows.html" %}</div>
+<script>
+  document.addEventListener("keydown", function (e) {
+    var tag = (document.activeElement && document.activeElement.tagName) || "";
+    var isInput = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    if ((e.key === "/" && !isInput) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) {
+      var box = document.getElementById("catalog-search");
+      if (box) { e.preventDefault(); box.focus(); box.select(); }
+    }
+  });
+</script>
 {% endblock %}

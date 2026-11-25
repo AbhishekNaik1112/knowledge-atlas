@@ -1,9 +1,9 @@
 {% if sync_event.embed_status == 'ok' -%}
-  <span class="badge" style="background:#dcfce7; color:#166534;">ok ({{ sync_event.embedded_count }})</span>
+  <span class="badge badge-ok">ok ({{ sync_event.embedded_count }})</span>
 {%- elif sync_event.embed_status == 'in_progress' -%}
-  <span class="badge" style="background:#fef3c7; color:#92400e;">in progress</span>
+  <span class="badge badge-warn">in progress</span>
 {%- elif sync_event.embed_status == 'error' -%}
-  <span class="badge" style="background:#fee2e2; color:#991b1b;">error</span>
+  <span class="badge badge-err">error</span>
 {%- else -%}
-  <span class="badge">{{ sync_event.embed_status }}</span>
+  <span class="badge badge-neutral">{{ sync_event.embed_status }}</span>
 {%- endif %}
