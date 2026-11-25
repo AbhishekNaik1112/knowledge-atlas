@@ -251,9 +251,7 @@
         <a href="/ui/graph" class="{% if p == '/ui/graph' %}active{% endif %}">Graph</a>
         <a href="/ui/activity" class="{% if p == '/ui/activity' %}active{% endif %}">Activity</a>
         <a href="/export.zip">Export</a>
-        {% if request is not defined or request.app.docs_url %}
-        <a href="/docs">API Docs</a>
-        {% endif %}
+        <a href="/docs" class="{% if p == '/docs' %}active{% endif %}">API Docs</a>
         <button id="theme-toggle" class="nav-btn" type="button" aria-label="Toggle color theme" title="Toggle light/dark theme">Theme</button>
         {% if request is defined and request.cookies.get('ka_session') %}
         <form method="post" action="/auth/logout" style="display:inline; margin:0;">

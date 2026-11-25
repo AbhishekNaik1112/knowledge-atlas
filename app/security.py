@@ -133,6 +133,6 @@ def require_private_access(
         raise HTTPException(status_code=503, detail="private auth not configured")
     if _check_api_key_or_session(request, settings):
         return
-    if request.url.path.startswith("/ui"):
+    if request.url.path.startswith("/ui") or request.url.path == "/docs":
         raise HTTPException(status_code=302, headers={"Location": "/auth/login"}, detail="login required")
     raise HTTPException(status_code=401, detail="authentication required")

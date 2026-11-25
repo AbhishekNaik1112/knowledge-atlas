@@ -50,9 +50,28 @@ def test_ui_search_and_hybrid_search_fallback_to_keyword_on_embed_error(db_sessi
     app.dependency_overrides.clear()
 
 
-def test_private_mode_disables_openapi_docs(monkeypatch):
-    monkeypatch.setattr("app.main.get_settings", lambda: Settings(private_mode=True))
+def test_private_mode_gates_openapi_docs_behind_auth(monkeypatch):
+    monkeypatch.setattr(
+        "app.main.get_settings",
+        lambda: Settings(private_mode=True, api_key="k-secret"),
+    )
     app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        private_mode=True, api_key="k-secret"
+    )
     with TestClient(app) as c:
-        assert c.get("/docs").status_code == 404
-        assert c.get("/openapi.json").status_code == 404
+        anon_docs = c.get("/docs", follow_redirects=False)
+        assert anon_docs.status_code == 302
+        assert anon_docs.headers["location"] == "/auth/login"
+        assert c.get("/openapi.json").status_code == 401
+
+        hdrs = {"Authorization": "Bearer k-secret"}
+        ok_docs = c.get("/docs", headers=hdrs)
+        assert ok_docs.status_code == 200
+        assert "swagger-ui" in ok_docs.text.lower()
+        assert "https://cdn.jsdelivr.net" in ok_docs.headers["content-security-policy"]
+
+        ok_schema = c.get("/openapi.json", headers=hdrs)
+        assert ok_schema.status_code == 200
+        assert "paths" in ok_schema.json()
+    app.dependency_overrides.clear()

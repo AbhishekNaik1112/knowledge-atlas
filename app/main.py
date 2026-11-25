@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.config import get_settings
 from app.errors import ConflictError, NotFoundError
 from app.middleware import BodySizeLimitMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 from app.routers import auth, concepts, export, graph, ingest, mcp, search, ui, validate, webhooks
+from app.security import require_private_access
 
 
 @asynccontextmanager
@@ -41,6 +43,23 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["meta"])
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    if private:
+        @app.get(
+            "/openapi.json",
+            include_in_schema=False,
+            dependencies=[Depends(require_private_access)],
+        )
+        def private_openapi() -> JSONResponse:
+            return JSONResponse(app.openapi())
+
+        @app.get(
+            "/docs",
+            include_in_schema=False,
+            dependencies=[Depends(require_private_access)],
+        )
+        def private_docs() -> HTMLResponse:
+            return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} - Docs")
 
     @app.exception_handler(NotFoundError)
     async def _not_found(request: Request, exc: NotFoundError) -> JSONResponse:
