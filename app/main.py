@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import get_settings
 from app.errors import ConflictError, NotFoundError
-from app.routers import concepts, graph, ingest, search, ui, validate, webhooks
+from app.middleware import BodySizeLimitMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
+from app.routers import auth, concepts, export, graph, ingest, mcp, search, ui, validate, webhooks
 
 
 @asynccontextmanager
@@ -23,7 +24,15 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="OKF Knowledge Catalog API", version="0.1.0", lifespan=_lifespan)
+    private = get_settings().private_mode
+    app = FastAPI(
+        title="OKF Knowledge Catalog API",
+        version="0.1.0",
+        lifespan=_lifespan,
+        docs_url=None if private else "/docs",
+        redoc_url=None if private else "/redoc",
+        openapi_url=None if private else "/openapi.json",
+    )
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
@@ -41,12 +50,19 @@ def create_app() -> FastAPI:
     async def _conflict(request: Request, exc: ConflictError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"detail": str(exc), "code": "conflict"})
 
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware)
+    app.add_middleware(RateLimitMiddleware)
+
+    app.include_router(auth.router)
+    app.include_router(mcp.router)
     app.include_router(concepts.router)
     app.include_router(search.router)
     app.include_router(ingest.router)
     app.include_router(validate.router)
     app.include_router(webhooks.router)
     app.include_router(graph.router)
+    app.include_router(export.router)
     app.include_router(ui.router)
 
     return app
