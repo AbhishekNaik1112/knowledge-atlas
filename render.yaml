@@ -15,6 +15,18 @@ services:
       - key: GITHUB_WEBHOOK_SECRET
         sync: false                 # set to match the GitHub webhook secret
       - key: EMBEDDINGS_ENABLED
-        value: "false"              # semantic search off in cloud (torch too heavy for free RAM)
+        value: "false"              # set "true" + GEMINI_API_KEY for lightweight cloud embeddings
+      - key: GEMINI_API_KEY
+        sync: false                 # optional Gemini API key for 384d embeddings without PyTorch
+      - key: PRIVATE_MODE
+        value: "false"              # set "true" + GitHub OAuth vars to lock down cloud access
+      - key: SESSION_SECRET
+        generateValue: true         # HMAC key for signed session cookies in private mode
+      - key: GITHUB_CLIENT_ID
+        sync: false                 # GitHub OAuth / GitHub App client ID
+      - key: GITHUB_CLIENT_SECRET
+        sync: false                 # GitHub OAuth / GitHub App client secret
+      - key: ALLOWED_GITHUB_LOGIN
+        sync: false                 # single GitHub username allowed when PRIVATE_MODE=true
       - key: AUTO_INIT_DB
-        value: "true"               # create the schema on first boot
+        value: "true"               # create/update schema on boot

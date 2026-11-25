@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "knowledge-atlas"
 version = "0.1.0"
-description = "Knowledge Atlas — a Knowledge Catalog API for OKF (Open Knowledge Format) bundles"
+description = "Knowledge Atlas — self-hostable OKF Markdown Second Brain, Knowledge Graph, pgvector hybrid search, and hosted MCP server"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
