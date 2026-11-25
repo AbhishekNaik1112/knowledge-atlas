@@ -14,6 +14,7 @@ The relative path (minus `.md`) becomes the concept's **ID** and URL (`/ui/conce
 ### Existing Folders
 | Folder | Use for |
 |---|---|
+| `ai-systems/` | LLM wikis, embeddings, MCP patterns, prompt caching, agent sandboxing |
 | `architecture/` | System design patterns, gateways, circuit breakers, event-driven flows |
 | `backend/` | APIs, RPC, middleware, job queues, logging, schemas |
 | `database/` | Postgres, indexing, pooling, transactions, Redis caching |
@@ -27,7 +28,8 @@ The relative path (minus `.md`) becomes the concept's **ID** and URL (`/ui/conce
 | `testing/` | Unit, integration, contract, and E2E testing |
 
 You can also create a new subfolder under `demo/web-dev-atlas/` if a topic doesn't fit any existing folder.  
-`index.md` and `log.md` are treated as structural navigation files and skipped during ingest.
+`index.md` and `log.md` are treated as structural navigation files and skipped during ingest.  
+Concepts can also be created directly via the hosted `/mcp` endpoint (`bundle="mcp"`) using Antigravity.
 
 ---
 

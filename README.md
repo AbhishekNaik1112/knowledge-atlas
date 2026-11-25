@@ -7,7 +7,7 @@ with YAML frontmatter — into PostgreSQL and exposes them through a REST API an
 tag/type filtering, full-text and semantic search, a validator, a GitHub auto-sync webhook, and an
 interactive cross-link graph.
 
-Built **test-first (TDD)** on an entirely **free / open-source stack**. 172 tests (+2 opt-in real-model), no paid services required.
+Built **test-first (TDD)** on an entirely **free / open-source stack**. 175 tests (+2 opt-in real-model), no paid services required.
 
 > OKF is Google's open, vendor-neutral format for knowledge-as-files. Each concept is one Markdown file
 > with a small YAML header (`type` is the only required field); concepts cross-link with normal Markdown
@@ -21,7 +21,7 @@ Built **test-first (TDD)** on an entirely **free / open-source stack**. 172 test
   paths, skips `index.md`/`log.md`, extracts cross-links into a graph, and is idempotent on re-ingest.
 - **CRUD** over concepts with slash-containing IDs (e.g. `tables/users`).
 - **Filter** by `type` and `tags` (AND semantics via Postgres arrays), paginated.
-- **Full-text & semantic search** (`tsvector` + `ts_rank_cd`), with hosted **Gemini Embeddings** (`gemini-embedding-001`, 384-dim via `httpx`, zero PyTorch RAM overhead) or optional local `sentence-transformers` + `pgvector` cosine + **hybrid** reciprocal-rank fusion (with graceful keyword fallback).
+- **Full-text & semantic search** (`tsvector` + `ts_rank_cd`), with hosted **Gemini Embeddings** (`gemini-embedding-001`, 384-dim via `httpx`, incremental re-embedding for new/changed/unembedded docs, 15-doc batches with 6,000-char cap & `429` backoff) or optional local `sentence-transformers` + `pgvector` cosine + **hybrid** reciprocal-rank fusion (with graceful keyword fallback).
 - **Link graph** — outgoing links, backlinks, and a whole-catalog `/graph` JSON.
 - **Validator** — lint a bundle for missing `type`, duplicate IDs, and dangling links (no persistence).
 - **GitHub webhook & embed status** — HMAC-SHA256-verified push → background re-ingest with **prune-on-sync**, branch & `GITHUB_SYNC_SUBDIR` scoping, `sync_events` activity log tracking live `in_progress` / `ok` / `skipped` / `error` embed status + plain-English `embed_detail`, and optional multi-repo namespace isolation (`@repo/path` cross-links).
@@ -58,36 +58,107 @@ tests/               unit / repo / api  (+ real crypto_bitcoin fixture)
 ## Requirements
 
 - Python 3.11+
-- Docker (runs the local Postgres + `pgvector` container)
+- Docker & Docker Compose (runs Postgres + `pgvector` on port `5433`)
+- Git (used by `RepoSyncer` webhook syncs)
 
-## Quickstart
+## Local Setup Guide
+
+### 1. Clone & install dependencies
 
 ```bash
-# 1. Start Postgres (pgvector) — mapped to host port 5433 to avoid a host Postgres on 5432
+git clone https://github.com/AbhishekNaik1112/knowledge-atlas.git
+cd knowledge-atlas
+
+python -m venv .venv
+.venv/Scripts/python -m pip install -e ".[dev]"     # Windows (PowerShell/cmd)
+# .venv/bin/python -m pip install -e ".[dev]"        # macOS/Linux
+```
+
+### 2. Configure `.env`
+
+Copy `.env.example` to `.env`:
+
+```powershell
+Copy-Item .env.example .env     # Windows
+# cp .env.example .env          # macOS/Linux
+```
+
+By default, local dev runs **open** (`PRIVATE_MODE=false`, no `API_KEY` needed) with keyword search enabled. Choose how you want embeddings locally:
+
+- **Option A — Gemini Embeddings (recommended, lightweight, no PyTorch)**:
+  ```env
+  EMBEDDINGS_ENABLED=true
+  GEMINI_API_KEY=your-gemini-api-key
+  ```
+- **Option B — Offline local model (`all-MiniLM-L6-v2`)**:
+  ```bash
+  .venv/Scripts/python -m pip install -e ".[semantic]"
+  ```
+  ```env
+  EMBEDDINGS_ENABLED=true
+  # leave GEMINI_API_KEY empty
+  ```
+
+### 3. Start Postgres & run migrations
+
+```bash
+# Starts Postgres + pgvector on localhost:5433 (avoids clashing with local Postgres on 5432)
 docker compose up -d
 
-# 2. Virtualenv + install
-python -m venv .venv
-.venv/Scripts/python -m pip install -e ".[dev]"     # Windows
-# .venv/bin/python -m pip install -e ".[dev]"        # macOS/Linux
+# Create/upgrade schema to latest Alembic revision
+.venv/Scripts/python -m alembic upgrade head
+```
+*(Alternatively, for a brand-new empty DB you can run `.venv/Scripts/python -c "from app.db import make_engine, init_db; init_db(make_engine())"`.)*
 
-# 3. Create the schema on the dev database
-.venv/Scripts/python -c "from app.db import make_engine, init_db; init_db(make_engine())"
+### 4. Run the dev server & ingest sample concepts
 
-# 4. Run
+```bash
 .venv/Scripts/python -m uvicorn app.main:app --reload
 ```
 
-Then load some data and open the UI:
+In a second terminal, ingest the bundled Web Dev sample (`69` cross-linked concepts):
 
 ```bash
-# ingest the bundled Web Dev sample (56 cross-linked concepts)
 curl -X POST "http://127.0.0.1:8000/ingest?path=demo/web-dev-atlas"
 ```
 
-- Web UI:   http://127.0.0.1:8000/ui
-- Graph:    http://127.0.0.1:8000/ui/graph
-- Swagger:  http://127.0.0.1:8000/docs
+Open in your browser:
+- Web UI:      <http://127.0.0.1:8000/ui>
+- Graph:       <http://127.0.0.1:8000/ui/graph>
+- Activity:    <http://127.0.0.1:8000/ui/activity>
+- Swagger UI:  <http://127.0.0.1:8000/docs> *(hidden when `PRIVATE_MODE=true`)*
+
+### 5. Connect Antigravity MCP locally
+
+Add to your `mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "knowledge-atlas-local": {
+      "serverUrl": "http://127.0.0.1:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer your-api-key-if-set"
+      }
+    }
+  }
+}
+```
+*(If `PRIVATE_MODE=false` and `API_KEY` is unset, the `Authorization` header can be omitted locally.)*
+
+### 6. (Optional) Test `PRIVATE_MODE=true` + GitHub OAuth locally
+
+1. Create a GitHub OAuth / GitHub App with callback URL `http://127.0.0.1:8000/auth/github/callback`.
+2. Generate secrets and set them in `.env`:
+   ```env
+   PRIVATE_MODE=true
+   API_KEY=your-strong-api-key
+   SESSION_SECRET=your-32plus-char-random-secret
+   GITHUB_CLIENT_ID=your-client-id
+   GITHUB_CLIENT_SECRET=your-client-secret
+   ALLOWED_GITHUB_LOGIN=your-github-username
+   ```
+3. Restart `uvicorn` — `/ui` now redirects to `/auth/login`, `/docs` returns `404`, and `/mcp` + REST routes require `Authorization: Bearer <API_KEY>`.
 
 ## Environment variables
 
@@ -154,7 +225,7 @@ Server-rendered (Jinja + htmx), under `/ui`:
 ## Search modes
 
 - **keyword** (default) — Postgres `tsvector`, BM-like `ts_rank_cd` ordering, `ts_headline` snippets.
-- **semantic** / **hybrid** — set `EMBEDDINGS_ENABLED=true` and provide `GEMINI_API_KEY` (lightweight HTTP embeddings, ideal for Render) or `pip install -e ".[semantic]"` for local `all-MiniLM-L6-v2`.
+- **semantic** / **hybrid** — set `EMBEDDINGS_ENABLED=true` and provide `GEMINI_API_KEY` (lightweight HTTP embeddings, incremental on new/changed/unembedded docs, throttled 15/batch with 6,000-char cap & `429` backoff) or `pip install -e ".[semantic]"` for local `all-MiniLM-L6-v2`.
   Embeddings are stored in a `pgvector` column with an hnsw cosine index; **hybrid** fuses keyword and vector rankings via reciprocal-rank fusion (and falls back to keyword if embedding fails).
 
 ---
@@ -163,7 +234,7 @@ Server-rendered (Jinja + htmx), under `/ui`:
 
 ```bash
 docker compose up -d                      # tests use the okf_test database
-.venv/Scripts/python -m pytest            # 172 tests (+2 opt-in real-model)
+.venv/Scripts/python -m pytest            # 175 tests (+2 opt-in real-model)
 ```
 
 Each test runs inside a transaction that rolls back (fast, isolated) against real Postgres. The ingest
@@ -181,13 +252,13 @@ OKF_REAL_EMBED=1 .venv/Scripts/python -m pytest tests/unit/test_embeddings_real.
 
 - **Postgres is on host port 5433** (not 5432) so it doesn't clash with a locally-installed Postgres.
 - **SQLite is intentionally not used** — Postgres gives `tsvector`, `pgvector`, and cloud durability.
-- **Schema is created via `init_db`** today; Alembic migrations are planned for deployment.
+- **Schema & migrations**: `alembic/versions/` tracks incremental migrations for local/managed DBs, while `AUTO_INIT_DB=true` runs idempotent `init_db()` on cloud startup.
 - **`/ingest?path=` reads a server-side directory** — meant for local/self-host use and automatically disabled when `PRIVATE_MODE=true`.
 - **Cloud embeddings without PyTorch**: set `GEMINI_API_KEY` + `EMBEDDINGS_ENABLED=true` to use lightweight Gemini Embeddings (`384`-dim via `httpx`) on small/free hosts without installing `torch`.
 
 ## Roadmap
 
 Phase A core MVP ✅ · B validator ✅ · C auth + webhook ✅ · D semantic/hybrid search ✅ · E web UI + graph ✅
-· **F deploy (Render + Neon) ✅** (`render.yaml` Blueprint + `Dockerfile` + Neon Postgres).
+· F deploy (Render + Neon) ✅ · **G Gemini embeddings, private GitHub OAuth allowlist, hosted `/mcp`, `.zip` export & UI redesign ✅**.
 
 License of the referenced OKF spec/samples: Apache-2.0.
