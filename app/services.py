@@ -11,7 +11,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.db import Concept
-from app.embeddings import Embedder, build_embed_text
+from app.embeddings import Embedder, build_embed_text, encode_with_task
 from app.links import resolved_links
 from app.repository import (
     ConceptInput,
@@ -74,7 +74,7 @@ class ConceptService:
         if not text:
             return
         try:
-            vector = self.embedder.encode([text])[0]
+            vector = encode_with_task(self.embedder, [text], "RETRIEVAL_DOCUMENT")[0]
             self.concepts.set_embedding(obj.id, list(vector))
         except Exception:
             logger.warning("Embedding failed for concept %s; preserving DB write", obj.id)

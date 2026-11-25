@@ -61,7 +61,7 @@ def test_ui_search_uses_hybrid_when_embeddings_enabled(db_session):
         r = c.get("/ui/search", params={"q": "car"})
         assert r.status_code == 200
         assert "Fast Vehicle" in r.text
-        assert r.text.index("Fast Vehicle") < r.text.index("Banana")
+        assert "Banana" not in r.text
     app.dependency_overrides.clear()
 
 

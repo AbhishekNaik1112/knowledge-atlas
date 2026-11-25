@@ -13,7 +13,7 @@ from fastapi.templating import Jinja2Templates
 from app.config import Settings, get_settings
 from app.db import Concept
 from app.dependencies import get_concept_repo, get_edge_repo, get_search_repo, get_sync_repo
-from app.embeddings import Embedder, get_embedder
+from app.embeddings import Embedder, encode_with_task, get_embedder
 from app.render import render_body_html
 from app.repository import (
     SearchHit,
@@ -92,7 +92,7 @@ def ui_search(
         query_vec: list[float] | None = None
         if settings.embeddings_enabled:
             try:
-                query_vec = embedder.encode([q])[0]
+                query_vec = encode_with_task(embedder, [q], "RETRIEVAL_QUERY")[0]
             except Exception:
                 logger.warning("UI query embedding failed; falling back to keyword search")
         if query_vec is not None:
@@ -104,6 +104,7 @@ def ui_search(
                 prefix=prefix_f,
                 bundle=bundle_f,
                 limit=50,
+                min_score=settings.semantic_min_score,
             )
         else:
             rows, _ = search.search(

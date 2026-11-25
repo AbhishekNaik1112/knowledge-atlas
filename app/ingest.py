@@ -14,7 +14,7 @@ from dataclasses import replace
 from sqlalchemy.orm import Session
 
 from app.bundle import BundleEntry, read_dir, read_zip
-from app.embeddings import Embedder, build_embed_text
+from app.embeddings import Embedder, build_embed_text, encode_with_task
 from app.links import resolved_links
 from app.models import IngestError, IngestResult
 from app.parser import InvalidFrontmatterError, MissingTypeError, is_structural_file, parse_concept
@@ -178,7 +178,9 @@ class IngestService:
             return 0, "ok", "No new, changed, or unembedded documents needed embedding in this sync."
         ids = list(embed_sources)
         try:
-            vectors = self.embedder.encode([embed_sources[i] for i in ids])
+            vectors = encode_with_task(
+                self.embedder, [embed_sources[i] for i in ids], "RETRIEVAL_DOCUMENT"
+            )
             for concept_id, vector in zip(ids, vectors):
                 self.concepts.set_embedding(concept_id, list(vector))
             return len(ids), "ok", f"All {len(ids)} document(s) were embedded for semantic search."

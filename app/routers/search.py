@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.config import Settings, get_settings
 from app.dependencies import get_search_repo
-from app.embeddings import Embedder, get_embedder
+from app.embeddings import Embedder, encode_with_task, get_embedder
 from app.models import Page, SearchHitOut
 from app.repository import SqlSearchRepository
 from app.security import require_private_access
@@ -50,7 +50,7 @@ def search(
         if not settings.embeddings_enabled:
             raise HTTPException(status_code=400, detail="semantic search is disabled")
         try:
-            query_vec = embedder.encode([q])[0]
+            query_vec = encode_with_task(embedder, [q], "RETRIEVAL_QUERY")[0]
         except Exception:
             if mode == "hybrid":
                 logger.warning("Hybrid query embedding failed; falling back to keyword search")
@@ -68,6 +68,7 @@ def search(
                     bundle=bundle,
                     limit=effective_limit,
                     offset=offset,
+                    min_score=settings.semantic_min_score,
                 )
             else:  # hybrid
                 hits, total = repo.hybrid(
@@ -78,6 +79,7 @@ def search(
                     bundle=bundle,
                     limit=effective_limit,
                     offset=offset,
+                    min_score=settings.semantic_min_score,
                 )
 
     return Page(

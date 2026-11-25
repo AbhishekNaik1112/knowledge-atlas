@@ -54,6 +54,13 @@ def build_embed_text(title: str | None, description: str | None, body: str | Non
     return " ".join(x for x in (title, description, body) if x)
 
 
+def encode_with_task(embedder: Embedder, texts: list[str], task_type: str) -> list[list[float]]:
+    """Pass Gemini asymmetric taskType when using GeminiEmbedder; standard encode otherwise."""
+    if isinstance(embedder, GeminiEmbedder):
+        return embedder.encode(texts, task_type=task_type)
+    return embedder.encode(texts)
+
+
 def _retry_delay(resp: httpx.Response, base: float, attempt: int) -> float:
     raw = resp.headers.get("retry-after")
     if raw is not None:
@@ -88,18 +95,25 @@ class GeminiEmbedder:
         self._sleep = sleep_fn
 
     def _post_batch(
-        self, client: httpx.Client, url: str, headers: dict[str, str], chunk: list[str]
+        self,
+        client: httpx.Client,
+        url: str,
+        headers: dict[str, str],
+        chunk: list[str],
+        *,
+        task_type: str | None = None,
     ) -> list[list[float]]:
-        payload = {
-            "requests": [
-                {
-                    "model": f"models/{self.model_name}",
-                    "content": {"parts": [{"text": text[:_MAX_EMBED_CHARS]}]},
-                    "outputDimensionality": self.output_dim,
-                }
-                for text in chunk
-            ]
-        }
+        requests_payload: list[dict[str, Any]] = []
+        for text in chunk:
+            item: dict[str, Any] = {
+                "model": f"models/{self.model_name}",
+                "content": {"parts": [{"text": text[:_MAX_EMBED_CHARS]}]},
+                "outputDimensionality": self.output_dim,
+            }
+            if task_type is not None:
+                item["taskType"] = task_type
+            requests_payload.append(item)
+        payload = {"requests": requests_payload}
         for attempt in range(self.max_retries):
             resp = client.post(url, headers=headers, json=payload)
             if resp.status_code == 429 and attempt < self.max_retries - 1:
@@ -114,10 +128,12 @@ class GeminiEmbedder:
                 raise RuntimeError(
                     f"Gemini embedding count mismatch: expected {len(chunk)}, got {len(embeddings)}"
                 )
-            return [_l2_normalize([float(x) for x in item["values"]]) for item in embeddings]
+            return [_l2_normalize([float(x) for x in emb["values"]]) for emb in embeddings]
         raise RuntimeError("Gemini embedding request failed with HTTP 429")
 
-    def encode(self, texts: list[str]) -> list[list[float]]:
+    def encode(
+        self, texts: list[str], *, task_type: str | None = None
+    ) -> list[list[float]]:
         if not texts:
             return []
         url = (
@@ -134,7 +150,7 @@ class GeminiEmbedder:
                 if start > 0 and self.batch_delay_seconds > 0:
                     self._sleep(self.batch_delay_seconds)
                 chunk = texts[start : start + _GEMINI_BATCH_LIMIT]
-                out.extend(self._post_batch(client, url, headers, chunk))
+                out.extend(self._post_batch(client, url, headers, chunk, task_type=task_type))
         finally:
             if own_client:
                 client.close()

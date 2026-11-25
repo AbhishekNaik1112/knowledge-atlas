@@ -75,3 +75,44 @@ def test_private_mode_gates_openapi_docs_behind_auth(monkeypatch):
         assert ok_schema.status_code == 200
         assert "paths" in ok_schema.json()
     app.dependency_overrides.clear()
+
+
+def test_keyword_search_ranks_title_match_above_body_mention(client):
+    client.post(
+        "/concepts",
+        json={
+            "id": "body-only",
+            "type": "Doc",
+            "title": "General Overview",
+            "body": "caching caching caching in body",
+        },
+    )
+    client.post(
+        "/concepts",
+        json={
+            "id": "title-hit",
+            "type": "Doc",
+            "title": "HTTP Caching",
+            "body": "Short note.",
+        },
+    )
+    items = client.get("/search", params={"q": "caching", "mode": "keyword"}).json()["items"]
+    assert [i["id"] for i in items] == ["title-hit", "body-only"]
+
+
+def test_semantic_search_filters_out_low_similarity_noise(db_session):
+    from tests.api.test_semantic import FakeEmbedder
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        embeddings_enabled=True, semantic_min_score=0.45
+    )
+    app.dependency_overrides[get_embedder] = FakeEmbedder
+    with TestClient(app) as c:
+        c.post("/concepts", json={"id": "car", "type": "Doc", "body": "fast automobile"})
+        c.post("/concepts", json={"id": "bread", "type": "Doc", "body": "banana recipe"})
+        res = c.get("/search", params={"q": "car", "mode": "semantic"}).json()
+        assert res["total"] == 1
+        assert [i["id"] for i in res["items"]] == ["car"]
+    app.dependency_overrides.clear()

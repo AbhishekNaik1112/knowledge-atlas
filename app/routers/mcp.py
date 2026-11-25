@@ -18,7 +18,7 @@ from app.dependencies import (
     get_search_repo,
     get_sync_repo,
 )
-from app.embeddings import Embedder, get_embedder
+from app.embeddings import Embedder, encode_with_task, get_embedder
 from app.models import ConceptOut, SearchHitOut, SyncEventOut
 from app.repository import (
     ConceptInput,
@@ -160,14 +160,23 @@ def _run_search(
 ) -> dict[str, Any]:
     if args.mode in ("semantic", "hybrid") and settings.embeddings_enabled:
         try:
-            vec = embedder.encode([args.query])[0]
+            vec = encode_with_task(embedder, [args.query], "RETRIEVAL_QUERY")[0]
             if args.mode == "semantic":
                 hits, total = search_repo.semantic(
-                    vec, type=args.type, bundle=args.bundle, limit=args.limit
+                    vec,
+                    type=args.type,
+                    bundle=args.bundle,
+                    limit=args.limit,
+                    min_score=settings.semantic_min_score,
                 )
             else:
                 hits, total = search_repo.hybrid(
-                    args.query, vec, type=args.type, bundle=args.bundle, limit=args.limit
+                    args.query,
+                    vec,
+                    type=args.type,
+                    bundle=args.bundle,
+                    limit=args.limit,
+                    min_score=settings.semantic_min_score,
                 )
             return _tool_result(
                 {

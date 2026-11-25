@@ -129,3 +129,22 @@ def test_gemini_embedder_retries_on_429_then_succeeds():
     assert attempts == 2
     assert len(sleeps) == 1 and sleeps[0] == 1.0
     assert math.isclose(vecs[0][0], 0.6, rel_tol=1e-6)
+
+
+def test_gemini_embedder_sends_asymmetric_task_types():
+    from app.embeddings import GeminiEmbedder, encode_with_task
+
+    seen_tasks: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        seen_tasks.append(body["requests"][0].get("taskType"))
+        return httpx.Response(200, json={"embeddings": [{"values": [1.0] + [0.0] * 383}]})
+
+    embedder = GeminiEmbedder(
+        api_key="gem-key",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    encode_with_task(embedder, ["doc text"], "RETRIEVAL_DOCUMENT")
+    encode_with_task(embedder, ["short query"], "RETRIEVAL_QUERY")
+    assert seen_tasks == ["RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"]

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     embedding_model: str = "all-MiniLM-L6-v2"
     gemini_api_key: str | None = None
     gemini_embedding_model: str = "gemini-embedding-001"
+    semantic_min_score: float = 0.45
 
     private_mode: bool = False
     session_secret: str | None = None

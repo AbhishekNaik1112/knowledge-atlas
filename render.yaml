@@ -15,11 +15,11 @@ services:
       - key: GITHUB_WEBHOOK_SECRET
         sync: false                 # set to match the GitHub webhook secret
       - key: EMBEDDINGS_ENABLED
-        value: "false"              # set "true" + GEMINI_API_KEY for lightweight cloud embeddings
+        sync: false                 # set "true" + GEMINI_API_KEY in dashboard for cloud embeddings
       - key: GEMINI_API_KEY
         sync: false                 # optional Gemini API key for 384d embeddings without PyTorch
       - key: PRIVATE_MODE
-        value: "false"              # set "true" + GitHub OAuth vars to lock down cloud access
+        sync: false                 # set "true" + GitHub OAuth vars in dashboard to lock down cloud access
       - key: SESSION_SECRET
         generateValue: true         # HMAC key for signed session cookies in private mode
       - key: GITHUB_CLIENT_ID

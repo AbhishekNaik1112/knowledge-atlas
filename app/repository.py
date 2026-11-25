@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import and_, delete, func, select, update
+from sqlalchemy import and_, delete, func, literal_column, select, update
 from sqlalchemy.orm import Session
 
 from app.db import Concept, Edge, SyncEvent
@@ -282,6 +282,33 @@ class SqlSearchRepository:
             conditions.append(Concept.id.startswith(f"{prefix.strip('/')}/"))
         return conditions
 
+    @staticmethod
+    def _weighted_rank(tsquery):
+        weighted_vec = (
+            func.setweight(
+                func.to_tsvector("english", func.coalesce(Concept.title, "")),
+                literal_column("'A'"),
+            )
+            .op("||")(
+                func.setweight(
+                    func.to_tsvector("english", func.coalesce(Concept.description, "")),
+                    literal_column("'B'"),
+                )
+            )
+            .op("||")(
+                func.setweight(
+                    func.to_tsvector("english", func.coalesce(Concept.body, "")),
+                    literal_column("'C'"),
+                )
+            )
+        )
+        return func.ts_rank_cd(weighted_vec, tsquery)
+
+    @staticmethod
+    def _snippet_expr(tsquery):
+        text_expr = func.concat_ws(" — ", Concept.title, Concept.description, Concept.body)
+        return func.ts_headline("english", text_expr, tsquery, _HEADLINE_OPTS)
+
     def search(
         self,
         q: str,
@@ -294,8 +321,8 @@ class SqlSearchRepository:
         offset: int = 0,
     ) -> tuple[list[SearchHit], int]:
         tsquery = func.websearch_to_tsquery("english", q)
-        score = func.ts_rank_cd(Concept.search_vector, tsquery)
-        snippet = func.ts_headline("english", Concept.body, tsquery, _HEADLINE_OPTS)
+        score = self._weighted_rank(tsquery)
+        snippet = self._snippet_expr(tsquery)
 
         conditions = [
             Concept.search_vector.bool_op("@@")(tsquery),
@@ -345,11 +372,16 @@ class SqlSearchRepository:
         bundle: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        min_score: float = 0.45,
     ) -> tuple[list[SearchHit], int]:
-        where = and_(
-            Concept.embedding.isnot(None), *self._extra_filters(type, tags, prefix, bundle)
-        )
         distance = Concept.embedding.cosine_distance(query_vec)
+        conditions = [
+            Concept.embedding.isnot(None),
+            *self._extra_filters(type, tags, prefix, bundle),
+        ]
+        if min_score > 0:
+            conditions.append(distance <= (1.0 - min_score))
+        where = and_(*conditions)
         total = self.s.execute(
             select(func.count()).select_from(Concept).where(where)
         ).scalar_one()
@@ -393,8 +425,9 @@ class SqlSearchRepository:
         offset: int = 0,
         k: int = 60,
         pool: int = 100,
+        min_score: float = 0.45,
     ) -> tuple[list[SearchHit], int]:
-        """Reciprocal-rank fusion of keyword (ts_rank_cd) and semantic (cosine) rankings."""
+        """Reciprocal-rank fusion of weighted keyword (ts_rank_cd) and semantic (cosine) rankings."""
         extra = self._extra_filters(type, tags, prefix, bundle)
         tsquery = func.websearch_to_tsquery("english", q)
 
@@ -403,16 +436,20 @@ class SqlSearchRepository:
             for row in self.s.execute(
                 select(Concept.id)
                 .where(and_(Concept.search_vector.bool_op("@@")(tsquery), *extra))
-                .order_by(func.ts_rank_cd(Concept.search_vector, tsquery).desc())
+                .order_by(self._weighted_rank(tsquery).desc(), Concept.id)
                 .limit(pool)
             )
         ]
+        distance = Concept.embedding.cosine_distance(query_vec)
+        sem_conditions = [Concept.embedding.isnot(None), *extra]
+        if min_score > 0:
+            sem_conditions.append(distance <= (1.0 - min_score))
         semantic_ids = [
             row[0]
             for row in self.s.execute(
                 select(Concept.id)
-                .where(and_(Concept.embedding.isnot(None), *extra))
-                .order_by(Concept.embedding.cosine_distance(query_vec))
+                .where(and_(*sem_conditions))
+                .order_by(distance)
                 .limit(pool)
             )
         ]
@@ -433,7 +470,7 @@ class SqlSearchRepository:
         kw_page_ids = [cid for cid in page if cid in keyword_ids]
         kw_snippets: dict[str, str] = {}
         if kw_page_ids:
-            headline_expr = func.ts_headline("english", Concept.body, tsquery, _HEADLINE_OPTS)
+            headline_expr = self._snippet_expr(tsquery)
             for cid, snip in self.s.execute(
                 select(Concept.id, headline_expr).where(Concept.id.in_(kw_page_ids))
             ):
